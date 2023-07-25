@@ -4,16 +4,19 @@
 # sz needs to be defined as data shape[1]
 # networks:
 #   informed_net:
-#
+#       QCT metrics autoencoder, metric location-informed  
+#           see eg data Z:\_Current IRB Approved Studies\IRB_Closed\
+#                       FES_Rowing_SecondaryAnalysis\Final QCT Results
 #   FC_net:
-# 
+#       QCT metrics autoencoder, Fully Connected
 #   mask2qct_net:
-# 
+#       Mask 3D density matrix to QCT metrics reduced by encoder of above 
 #   HR_mask2qct_net:
-# 
+#       Same, but with higher resolution data, truncated view
 #   netG:
-# 
+#       Generator for GAN
 #   netD:
+#       Discriminator for GAN
 # =============================================================================
 import pandas as pd
 import numpy as np

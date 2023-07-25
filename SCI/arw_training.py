@@ -4,21 +4,16 @@
 # functions:
 # mask_registration(file,target_res,i,drop_factor)
 #   purpose: grab dicom data, return indices and densities from point cloud
-
 # train_supervised(training_inputs, training_outputs, network, epochs, learning_rate, 
 #          wtdecay,batch_size, loss_function, print_interval, device):
 #    purpose: train a supervised model    
-
 # train_unsupervised(training_inputs, network, epochs, learning_rate, 
 #          wtdecay, batch_size, loss_function, print_interval,device)
 #    purpose: train an unsupervised model    
-
 # model_eval_supervised(XTrain,XTest,yTrain,yTest,model)
 #    purpose: evaluate supervised model
-
 # model_eval_unsupervised(x,model)
-#    purpose: evaluate unsupervised model
-    
+#    purpose: evaluate unsupervised model 
 #    plot_network(title,network,data,pred,losses,MAE,RMSE,R2)
 #    purpose: plot network metrics
 # =============================================================================

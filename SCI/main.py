@@ -2,13 +2,13 @@
 # =============================================================================
 # author: Andrew R. Wilzman
 # =============================================================================
-
+# What pips do I need? : torch, os, argparse? datetime?
 import argparse
 import os
 import torch
 import torch.nn as nn
 import datetime
-
+# local dependencies
 import arw_training
 import SCI_dataloader
 import bone_networks
@@ -18,7 +18,6 @@ month = date.strftime("%m")
 day = date.strftime("%d")
 year = date.strftime("%y")
 date = ('_'+month + '_' + day + '_' + year)
-
 # =============================================================================
 # Parsing arguments
 # =============================================================================
@@ -92,13 +91,15 @@ parser.add_argument('--load', type=str, default='no',
 parser.add_argument('--save', type=str, default='model',
                     help='fun name to tag onto the saved model')
 args = parser.parse_args()
-
+# =============================================================================
+# Argument errors
+# =============================================================================
+if len(args.model) > 5:
+    raise Exception('Model name is too long, only one model at a time.')
 # =============================================================================
 # Load QCT Data
 # =============================================================================
-
 studies = ['Feb28_SCI_rowing','Ekso','Healthy']
-
 if torch.cuda.is_available():
     print('CUDA available')
     print(torch.cuda.get_device_name(0))
@@ -158,7 +159,6 @@ if 'M' in args.model:
                                                  '_tb_integral.txt',data_id,maxes,
                                                  target_resolution,high_res_mag,
                                                  high_res_z_reduction)
-        
 # =============================================================================
 # Network Training
 # =============================================================================
@@ -208,6 +208,7 @@ if 'M2Q' in args.model:
     if args.bone == 'femur':
         network_code = 'fem_prm_net'
         encoder_network.load_state_dict(torch.load('fem_net'+date+'.pt'))
+    # encode QCT data for Y then dump, data will be replaced to free up space
     y = encoder_network.encode(torch.FloatTensor(data).cuda()).cpu().detach()
     data = mask_data
     del mask_data

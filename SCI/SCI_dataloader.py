@@ -3,11 +3,12 @@
 # author: Andrew R. Wilzman
 # functions:
 # load_qct(directory,studies)
-#    purpose: 
-
+#    purpose: load QCT data, see 
+#       eg. Z:\_Current IRB Approved Studies\IRB_Closed\
+#           FES_Rowing_SecondaryAnalysis\Final QCT Results
 # load_masks(directory,com_name,ids,mat_shape,res,high_res=4,z_reduction=0.2)    
-#    purpose: 
- 
+#    purpose: load masks, originally in pointcloud as output from segmentation,
+#                into matrix space
 # =============================================================================
 import pandas as pd
 import numpy as np
@@ -60,7 +61,6 @@ def load_masks(directory,com_name,ids,mat_shape,res,high_res=4,z_reduction=0.2):
     higher_res_data = np.full((int(mat_shape[0] // (res / high_res)),
                               int(mat_shape[1] // (res / high_res)),
                               int(mat_shape[2] * z_reduction // (res / high_res))+10, c1), 0)
-
     for i in pd.unique(ids[:,0]):
         for j in range(1,3): # Side L / R
             for k in range(1,4): # Scan time point 1, 2, 3
@@ -72,13 +72,7 @@ def load_masks(directory,com_name,ids,mat_shape,res,high_res=4,z_reduction=0.2):
                     [x_ind, y_ind, z_ind, d_d] = mask_registration(a,res,c2,1)
                     # Add to the data!
                     np.add.at(mask_data, (x_ind, y_ind, z_ind, c2), d_d)
-                    
-                    # Run registration function again with higher resolution factor
-                    
-                    
-                    # Add to the higher resolution data!
                     np.add.at(higher_res_data, (x_ind, y_ind, z_ind, c2), d_d)
                     c2+=1
                     print('Progress: '+str(c2)+' out of '+str(c1))
-                    
     return mask_data, higher_res_data
