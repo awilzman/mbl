@@ -23,7 +23,7 @@ date = ('_'+month + '_' + day + '_' + year)
 # Parsing arguments
 # =============================================================================
 parser = argparse.ArgumentParser(description='PyTorch Bone Crusher')
-parser.add_argument('--data', type=str, default='./SCI/',
+parser.add_argument('--data', type=str, default='./',
                     help='location of the data')
 parser.add_argument('--bone', type=str, default='femur',
                     help='bone (femur, tibia)')
