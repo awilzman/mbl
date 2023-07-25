@@ -137,15 +137,28 @@ tot_ind = [[9,10,41,42,43,44,45,46,47,48,49,59,60,61]]
 # =============================================================================
 if 'M' in args.model:
     if args.bone == 'femur':
-        mask_data, HR_mask_data = load_masks(args.data+'masks/',
-                                             '_fm_integral.txt',data_id,maxes,
-                                             target_resolution,high_res_mag,
-                                             high_res_z_reduction)
+        if 'HR' in args.model:
+            _, HR_mask_data = load_masks(args.data+'masks/',
+                                                 '_fm_integral.txt',data_id,maxes,
+                                                 target_resolution,high_res_mag,
+                                                 high_res_z_reduction)
+        else: 
+            mask_data, _ = load_masks(args.data+'masks/',
+                                                 '_fm_integral.txt',data_id,maxes,
+                                                 target_resolution,high_res_mag,
+                                                 high_res_z_reduction)
     if args.bone == 'tibia':
-        mask_data, HR_mask_data = load_masks(args.data+'masks/',
-                                             '_tb_integral.txt',data_id,maxes,
-                                             target_resolution,high_res_mag,
-                                             high_res_z_reduction)
+        if 'HR' in args.model:
+            _, HR_mask_data = load_masks(args.data+'masks/',
+                                                 '_tb_integral.txt',data_id,maxes,
+                                                 target_resolution,high_res_mag,
+                                                 high_res_z_reduction)
+        else:
+            mask_data, _ = load_masks(args.data+'masks/',
+                                                 '_tb_integral.txt',data_id,maxes,
+                                                 target_resolution,high_res_mag,
+                                                 high_res_z_reduction)
+        
 # =============================================================================
 # Network Training
 # =============================================================================
@@ -154,21 +167,22 @@ if 'M' in args.model:
 unsup = False
 p_int = args.epochs//10
 crit = nn.L1Loss()
-if args.model == 'Q2Q':
+if 'Q2Q' in args.model:
     unsup = True
-    network = FC_net(args.layer1,args.prms,sz).cuda()
-    if args.bone == 'tibia':
-        network_code = 'tib_net'
-    if args.bone == 'femur':
-        network_code = 'fem_net'
-if args.model == 'Q2Qi':
-    unsup = True
-    network = informed_net(epi_ind, met_ind,dia_ind,tot_ind,args.trunc,
-                           args.prms).cuda()
-    if args.bone == 'tibia':
-        network_code = 'itib_net'
-    if args.bone == 'femur':
-        network_code = 'ifem_net'
+    if 'i' in args.model:
+        network = informed_net(epi_ind, met_ind,dia_ind,tot_ind,args.trunc,
+                               args.prms).cuda()
+        if args.bone == 'tibia':
+            network_code = 'itib_net'
+        if args.bone == 'femur':
+            network_code = 'ifem_net'
+    else:
+        network = FC_net(args.layer1,args.prms,sz).cuda()
+        if args.bone == 'tibia':
+            network_code = 'tib_net'
+        if args.bone == 'femur':
+            network_code = 'fem_net'
+    
 if 'M2Q' in args.model:
     maxes = [args.maskxy,args.maskxy,args.maskz]
     if 'i' in args.model:
@@ -199,18 +213,31 @@ if 'M2Q' in args.model:
     del mask_data
 # =============================================================================
 #     GAN code
+#       Requries finished autoencoder network to get started
+#       Optional load for discriminator and generator, but not 'either or'
+#           must be same date for now
 # =============================================================================
 if 'GAN' in args.model:
     netD = netD(args.prms,args.layer1,args.hidden,sz).cuda()
     netG = netG(args.prms,args.layer1,args.hidden,sz).cuda()
-    autoencoder_network = FC_net(args.layer1,args.prms,sz).cuda()
-    
+    if 'i' in args.model:
+        autoencoder_network = informed_net(epi_ind, met_ind,dia_ind,tot_ind,
+                                       args.trunc,args.prms).cuda()
+    else: 
+        autoencoder_network = FC_net(args.layer1,args.prms,sz).cuda()
     if args.bone == 'tibia':
-        network_code = 'tib'
+        if 'i' in args.model:
+            network_code = 'itib'
+        else:
+            network_code = 'tib_net'
     if args.bone == 'femur':
-        network_code = 'fem'
+        if 'i' in args.model:
+            network_code = 'ifem'
+        else:
+            network_code = 'fem
+            _net'
     autoencoder_network.load_state_dict(torch.load(network_code+
-                                                   '_'+args.ae_load))    
+                                                   '_'+args.ae_load+'.pt'))    
     if '_' in args.load: # if load previous model
         d_name = 'd_'+network_code+'_'+args.load+'.pt'
         g_name = 'g_'+network_code+'_'+args.load+'.pt'
