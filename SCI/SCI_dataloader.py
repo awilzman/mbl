@@ -72,6 +72,7 @@ def load_masks(directory,com_name,ids,mat_shape,res,high_res=4,z_reduction=0.2):
                     [x_ind, y_ind, z_ind, d_d] = mask_registration(a,res,c2,1)
                     # Add to the data!
                     np.add.at(mask_data, (x_ind, y_ind, z_ind, c2), d_d)
+                    [x_ind, y_ind, z_ind, d_d] = mask_registration(a,res/high_res,c2,z_reduction)
                     np.add.at(higher_res_data, (x_ind, y_ind, z_ind, c2), d_d)
                     c2+=1
                     print('Progress: '+str(c2)+' out of '+str(c1))
