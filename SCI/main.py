@@ -2,14 +2,13 @@
 # =============================================================================
 # author: Andrew R. Wilzman
 # =============================================================================
-# What pips do I need? : torch, os, argparse? datetime?
+
 import argparse
-import os
 import torch
 import torch.nn as nn
 import datetime
 # local dependencies
-import arw_training
+import arw_training_turing
 import SCI_dataloader
 import bone_networks
 
@@ -259,16 +258,13 @@ if 'GAN' in args.model:
         x,y,test_size=args.ttsplit,random_state=args.randstate)
     d_net, losses = train_sup(
         x_train, y_train, netD, args.epochs, args.lr, args.batch_size, crit, p_int)
-    plt.plot(losses)
-    plt.title('losses')
-    plt.show()
     [MAE_train,MSE_train,RMSE_train,R2_train,
      MAE,MSE,RMSE,R2]=model_eval_supervised(x_train,x_test,y_train,y_test,d_net)
     x_real = autoencoder_network.decode(real_data).cpu().detach().numpy()
     g_net, g_net_losses, d_net, d_net_losses = train_GD(
         x_real, netG, d_net, args.epochs, args.lr, args.batch_size, crit, p_int)
-    d_net,g_net,MAE,MSE,RMSE,R2=GAN_Fight(d_net,g_net,args.matches,args.games,
-                          args.epochs,args.lr,args.batch_size)
+    d_net,g_net,MAE,MSE,RMSE,R2,g_net_losses, d_net_losses=GAN_Fight(
+        d_net,g_net,args.matches,args.games,args.epochs,args.lr,args.batch_size)
     torch.save(d_net.state_dict(),'d_'+network_code+'_'+date+'.pt')
     torch.save(g_net.state_dict(),'g_'++network_code+'_'+date+'.pt')
     
@@ -301,4 +297,21 @@ else: #if not GAN
         
     network_name = network_code+date+'.pt'
     torch.save(network.state_dict(),network_name)
+
+arguments = np.asarray([args.maskxy,args.maskz,args.res,args.highres,
+                        args.highresred,args.prms,args.trunc,args.layer1,
+                        args.hidden,args.ch1,args.ch2,args.ch3,args.cstride,
+                        args.cpad,args.mpstride,args.mpkernel,args.lr,
+                        args.decay,args.epochs,args.batch_size,args.dropout])
+
+if 'GAN' in args.model:
+    performance = np.asarray([g_net_losses, d_net_losses,
+        MAE_train,MSE_train,RMSE_train,R2_train,MAE,MSE,RMSE,R2])
+else:
+    performance = np.asarray([losses,
+        MAE_train,MSE_train,RMSE_train,R2_train,MAE,MSE,RMSE,R2])
+output_arg_file_path = args.data+'args_'+args.save+args.bone+args.model+date+'.csv'
+np.savetxt(output_arg_file_path,arguments,delimeter=',')
+output_file_path = args.data+args.save+args.bone+args.model+date+'.csv'
+np.savetxt(output_file_path,performance,delimiter=',')
 return MAE,MSE,RMSE,R2

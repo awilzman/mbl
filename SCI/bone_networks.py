@@ -26,7 +26,7 @@ from torch import nn
 
 class informed_net(nn.Module):
     def __init__(self,epi_ind,met_ind,dia_ind,tot_ind,trunc,prms):
-        super(informed_net, self).__init__()
+        super().__init__()
         self.epi_ind = torch.tensor(epi_ind).cuda()
         self.met_ind = torch.tensor(met_ind).cuda()
         self.dia_ind = torch.tensor(dia_ind).cuda()
@@ -108,7 +108,7 @@ class informed_net(nn.Module):
 # Dense network, naive
 class FC_net(nn.Module):
     def __init__(self,layer1_size,layer2_size,sz):
-        super(FC_net, self).__init__()
+        super().__init__()
         
         self.lay1 = nn.Linear(sz,layer1_size)
         self.lay2 = nn.Linear(layer1_size,layer2_size)
@@ -130,8 +130,8 @@ class FC_net(nn.Module):
 class mask2qct_net(nn.Module):
     def __init__(self,prms,maxes,target_resolution,hidden=64,mp_ksize=2,mp_strd=2,
                  cv_ksize=2,cv_pad=1,ch_1=4,ch_2=16,ch_3=32,dropout=0.2):
-        super(mask2qct_net, self).__init__()
-        
+        super().__init__()
+        self.target_resolution = target_resolution
         self.activate = nn.ReLU()
         self.conv_layers = nn.Sequential(
             nn.Conv3d(in_channels=1, out_channels=ch_1, kernel_size=cv_ksize, padding=cv_pad),
@@ -153,11 +153,11 @@ class mask2qct_net(nn.Module):
         self.fc1 = nn.Linear(self.fc_input_size, hidden)  # Calculate the size after 3D convolutions
         self.fc2 = nn.Linear(hidden, prms)
         
-        
     def _calculate_fc_input_size(self,maxes):
         # Dummy input to calculate feature map size after the convolutions
-        dummy_input = torch.rand(1, 1, int(maxes[0]//target_resolution), 
-                                 int(maxes[1]//target_resolution), int(maxes[2]//target_resolution))
+        dummy_input = torch.rand(1, 1, int(maxes[0]//self.target_resolution), 
+                                 int(maxes[1]//self.target_resolution), 
+                                 int(maxes[2]//self.target_resolution))
         x = self.conv_layers(dummy_input)
         return x.view(x.size(0), -1).size(1)
     
@@ -172,7 +172,7 @@ class HR_mask2qct_net(nn.Module):
     def __init__(self,prms,maxes,target_resolution,high_res_mag,high_res_z_reduction,
                 hidden=64,mp_ksize=8,mp_strd=4,cv_ksize=8,cv_pad=4,
                 ch_1=4,ch_2=16,ch_3=32,dropout=0.2):
-        super(HR_mask2qct_net, self).__init__()
+        super().__init__()
         self.high_res_mag = high_res_mag
         self.activate = nn.LeakyReLU()
         self.conv_layers = nn.Sequential(
@@ -210,7 +210,7 @@ class HR_mask2qct_net(nn.Module):
     
 class netG(nn.Module):
     def __init__(self,h1,h2,h3,h4):
-        super(netG, self).__init__()
+        super().__init__()
         self.p = nn.Linear(h1,h1)
         self.d1 = nn.Linear(h1,h2)
         self.d2 = nn.Linear(h2,h3)
@@ -229,7 +229,7 @@ class netG(nn.Module):
     
 class netD(nn.Module):
     def __init__(self,h1,h2,h3,h4):
-        super(netD, self).__init__()
+        super().__init__()
         
         self.determine1 = nn.Linear(h2,h1)
         self.determine2 = nn.Linear(h1,1)
