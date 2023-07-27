@@ -203,10 +203,10 @@ if 'M2Q' in args.model:
     del HR_mask_data
     if args.bone == 'tibia':
         network_code = 'tib_prm_net'
-        encoder_network.load_state_dict(torch.load('tib_net'+date+'.pt'))
+        encoder_network.load_state_dict(torch.load(args.data+'tib_net'+date+'.pt'))
     if args.bone == 'femur':
         network_code = 'fem_prm_net'
-        encoder_network.load_state_dict(torch.load('fem_net'+date+'.pt'))
+        encoder_network.load_state_dict(torch.load(args.data+'fem_net'+date+'.pt'))
     # encode QCT data for Y then dump, data will be replaced to free up space
     y = encoder_network.encode(torch.FloatTensor(data).cuda()).cpu().detach()
     data = mask_data
@@ -236,13 +236,13 @@ if 'GAN' in args.model:
         else:
             network_code = 'fem
             _net'
-    autoencoder_network.load_state_dict(torch.load(network_code+
+    autoencoder_network.load_state_dict(torch.load(args.data+network_code+
                                                    '_'+args.ae_load+'.pt'))    
     if '_' in args.load: # if load previous model
         d_name = 'd_'+network_code+'_'+args.load+'.pt'
         g_name = 'g_'+network_code+'_'+args.load+'.pt'
-        netD.load_state_dict(torch.load(d_name))
-        netG.load_state_dict(torch.load(g_name))
+        netD.load_state_dict(torch.load(args.data+d_name+args.load+'.pt'))
+        netG.load_state_dict(torch.load(args.data+d_name+args.load+'.pt'))
     
     noise = torch.randn((data.shape[0],args.prms),device=device)
     noise_dec = autoencoder_network.decode(noise)
@@ -271,7 +271,7 @@ if 'GAN' in args.model:
 else: #if not GAN
     if '_' in args.load: # if load previous model
         last_date = '_'+args.load
-        network_name = network_code+last_date+'.pt'
+        network_name = args.data+network_code+last_date+'.pt'
         network.load_state_dict(torch.load(network_name))
 # =============================================================================
 #     Unsupervised models
