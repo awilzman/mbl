@@ -132,7 +132,7 @@ def model_eval_unsupervised(x,model):
 
 # GAN training function
 def train_GD(training_inputs, Gnet, Dnet, epochs, learning_rate, 
-          batch_size, loss_function, print_interval): 
+          batch_size, loss_function, print_interval,device): 
   # convert numpy data to tensor data for pytorch
   train_dataset = torch.utils.data.TensorDataset(torch.FloatTensor(training_inputs),
                                                  torch.FloatTensor(training_inputs))
@@ -188,12 +188,13 @@ def train_GD(training_inputs, Gnet, Dnet, epochs, learning_rate,
   return Gnet,G_losses,Dnet,D_losses
 
 # GAN Fight - run r1 matches of r2 games between d_net (discriminator) and g_net (generator)
-def GAN_Fight(d_net,g_net,samples,prms,r1,r2,num_epochs,learn_rate,batch_size):
+def GAN_Fight(d_net,g_net,samples,prms,r1,r2,num_epochs,learn_rate,batch_size,p_int,device):
     crit = nn.BCELoss()
     for i in range(r1):
         noise = torch.randn((samples,prms),device=device)
         noise_dec = g_net(noise)
         noise_lab = torch.cat((noise_dec,torch.zeros((samples,1)).cuda()),1)
+        real_data_lab = torch.cat((samples,torch.ones((samples.shape[0],1)).cuda()),1)
         mix_data = torch.cat((noise_lab,real_data_lab),0).cpu().detach().numpy()
         x = torch.FloatTensor(mix_data[:,0:mix_data.shape[1]-1]).cuda().cpu().detach().numpy()
         y = mix_data[:,-1].reshape((mix_data.shape[0],1))
@@ -205,7 +206,7 @@ def GAN_Fight(d_net,g_net,samples,prms,r1,r2,num_epochs,learn_rate,batch_size):
          MAE_test,MSE_test,RMSE_test,R2_test]=model_eval_supervised(x_train,x_test,y_train,y_test,d_net)
         
         for j in range(r2):
-            g_net, g_net_losses, d_net, d_net_losses = train_GD(x_real, g_net, 
+            g_net, g_net_losses, d_net, d_net_losses = train_GD(samples, g_net, 
                                                                 d_net, num_epochs, 
                                                                 learn_rate, batch_size, 
                                                                 crit, p_int)
