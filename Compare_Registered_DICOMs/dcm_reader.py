@@ -10,13 +10,29 @@ from pydicom import dcmread
 import os
 import matplotlib.pyplot as plt
 import pandas as pd
+import numpy as np
 import pickle
 import requests
+from sklearn.decomposition import IncrementalPCA
+from scipy.spatial.distance import cdist
 # Specify the URL of the file you want to download
 file_url = 'http://xct.wpi.edu/DISK2/MICROCT/DATA/'
-cdvr = '00000009'
-meas = '00000073'
-file = 'C0000318_1'
+cdvr = '00000561'
+meas = '00004141'
+file = 'C0004382'
+name = 'test_sub'
+threshold = 5000
+trunc = 100
+save = True
+plot = True
+prnt = True
+calibrate_slope = 0.000357
+calibrate_int = -0.0012625
+# fetch the path to the test data
+local_directory = 'C:/Users/arwilzman/OneDrive - Worcester Polytechnic Institute (wpi.edu)'
+local_directory += '/Documents/Desktop/Compare_Registered_DICOMs/'
+directory = (local_directory+name+'/')
+path = (directory+file)
 
 def download_dicoms(directory,sample,meas,file_name,file_url):
     for i in range(500):
@@ -32,53 +48,50 @@ def download_dicoms(directory,sample,meas,file_name,file_url):
         else:
             print(f"Done at {file_path_ram} using {file_url_ram}")
             break
-#%%
-
-download_dicoms('',cdvr,meas,file,file_url)
-       #%% 
-name = 'calibration'
-save = False
-plot = True
-prnt = False
-# fetch the path to the test data
-directory = ('C:/Users/arwilzman/OneDrive - Worcester Polytechnic Institute'+
-             ' (wpi.edu)/Documents/Desktop/Compare_Registered_DICOMs/'+
-             name + '/')
-path = (directory + file + '_')
-all_items = os.listdir(directory)
-file_count = len([_ for _ in os.scandir(directory) if _.is_file()])
-
-for i in range(file_count-1):
-    num = str(i).zfill(5)
-    ds = dcmread(path+num+'.DCM')
-    pat_name = ds.PatientName
-    count=0
-    if i == 0:
-        resolution = float(ds.PixelSpacing[0])
-        pointcloud = pd.DataFrame(columns=['x','y','z','d'])
-    for x in range(ds.pixel_array.shape[1]):
-        for y in range(ds.pixel_array.shape[0]):
-            if ds.pixel_array[y,x] < 10:
-                continue
-            pc_ram = pd.DataFrame([[x*resolution,y*resolution,
-                                   float(ds.SliceLocation),ds.pixel_array[y,x]]],
-                                  columns=['x','y','z','d'])
-            pointcloud = pd.concat((pointcloud,pc_ram))
-        
-    if prnt:
-        print(f"Patient's Name...: {pat_name.family_comma_given()}")
-        print(f"Patient ID.......: {ds.PatientID}")
-        print(f"Modality.........: {ds.Modality}")
-        print(f"Study Date.......: {ds.StudyDate}")
-        print(f"Image size.......: {ds.Rows} x {ds.Columns}")
-        print(f"Pixel Spacing....: {ds.PixelSpacing}")
-        print(f"Slice location...: {ds.get('SliceLocation', '(missing)')}")
-    print(f"Progress...: {i+1} / {file_count}")
-    if plot:
-        plt.imshow(ds.pixel_array, cmap=plt.cm.gray)
-        plt.show()
+if not os.path.exists(directory):
+    os.makedirs(directory)
+    print('hold up, need to grab these for you')
+    download_dicoms(directory,cdvr,meas,file,file_url)
+    
+if os.path.exists(name+'.pkl'):
+    output = pd.read_pickle(name+'.pkl')
+    save = False
+    print('Loaded from pickle')
+else:
+    all_items = os.listdir(directory)
+    file_count = len([_ for _ in os.scandir(directory) if _.is_file()])
+    for i in range(file_count - 1):
+        num = str(i).zfill(5)
+        ds = dcmread(f'{path}_{num}.DCM')
+        pat_name = ds.PatientName
+        if i == 0:
+            resolution = float(ds.PixelSpacing[0])
+            output = pd.DataFrame(columns=['x','y','z','d'])
+        # Apply threshold
+        indices = np.where(ds.pixel_array >= threshold)
+        z_values = np.array([ds.SliceLocation] * len(indices[0]))
+        df = pd.DataFrame({'x': indices[1][::trunc] * resolution,
+                           'y': indices[0][::trunc] * resolution,
+                           'z': z_values[::trunc],
+                           'd': ds.pixel_array[indices][::trunc]})
+        # Update the 'output' DataFrame directly
+        df['d'] = df['d']*calibrate_slope+calibrate_int
+        output = pd.concat([output,df], axis=0)
+        if prnt:
+            print(f"Patient's Name...: {pat_name.family_comma_given()}")
+            print(f"Patient ID.......: {ds.PatientID}")
+            print(f"Modality.........: {ds.Modality}")
+            print(f"Study Date.......: {ds.StudyDate}")
+            print(f"Image size.......: {ds.Rows} x {ds.Columns}")
+            print(f"Pixel Spacing....: {ds.PixelSpacing}")
+            print(f"Slice location...: {ds.get('SliceLocation', '(missing)')}")
+        print(f"Progress...: {i+1} / {file_count}")
+        if plot:
+            plt.imshow(ds.pixel_array, cmap=plt.cm.gray)
+            plt.show()
+    output.reset_index(drop=True, inplace=True)
 if save:
-    with open(name+'.pkl','wb') as file:
-        pickle.dump(pointcloud,file)
-    pointcloud.to_csv(name+'.csv')
+    output.to_pickle(name + '.pkl')
+    output[['x','y','z']].round(3).to_csv(
+        name+'.txt',index=False,header=False,sep='\t',float_format='%.3f')
     
