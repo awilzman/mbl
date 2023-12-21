@@ -348,18 +348,6 @@ def daily_impact(directory,pt,tri,sensor_number):
     fft_accel = fft_int(data[cond][data.columns[0]],accel)    
     return di_bin(max_accel),fft_accel
 
-def plot_2drelation(pred,val,title='',xlab='',ylab='',xlim=None,ylim=None):
-    plt.scatter(pred,val)
-    plt.title(title)
-    plt.xlabel(xlab)
-    plt.ylabel(ylab)
-    if xlim is not None:
-        plt.xlim(xlim)
-    if ylim is not None:
-        plt.ylim(ylim)
-    plt.tight_layout()
-    plt.show()
-
 #%% Load Data
 if first_load:
     bulk_renamer()
