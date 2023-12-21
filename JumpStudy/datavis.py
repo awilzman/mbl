@@ -1,0 +1,224 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Tue Dec 12 21:21:53 2023
+
+@author: arwilzman
+"""
+import os
+import pandas as pd
+import numpy as np
+import datetime
+from matplotlib import pyplot as plt
+from matplotlib import cm
+from matplotlib.ticker import MaxNLocator
+from tkinter import filedialog as fd
+from tkinter import messagebox
+from PIL import Image, ImageSequence
+from sklearn.cluster import KMeans
+date = datetime.datetime.now()
+month = date.strftime("%m")
+day = date.strftime("%d")
+year = date.strftime("%y")
+date = ('_'+month + '_' + day + '_' + year)
+directory = 'Z:/_Current IRB Approved Studies/Jumping_Study/'
+total = pd.read_csv(directory+f'Data/Jump_Study_Data{date}.csv')
+
+plot_fig = True
+save_fig = True
+grif = False 
+
+def plot_2drelation(pred, val, figsize=None, title='', xlab='', ylab='', 
+                    colors=None, ylim=None, xlim=None):
+    # Create a new figure with the specified figsize or use the default size
+    if figsize:
+        plt.figure(figsize=figsize)
+    if colors is not None:
+        plt.scatter(pred, val, c=colors, cmap='cool')
+        cb = plt.colorbar(orientation='horizontal',ticks=[1,2])
+        cb.set_label(label='Landing Limbs',size=20)
+        cb.ax.tick_params(labelsize=25)
+    else:
+        plt.scatter(pred, val)
+    plt.title(title,fontsize=20)
+    plt.ylabel(ylab,fontsize=20)
+    plt.xlabel(xlab,fontsize=20)
+    plt.yticks(fontsize=20)
+    plt.xticks(fontsize=20)
+    if xlim is not None:
+        plt.xlim(xlim)
+    if ylim is not None:
+        plt.ylim(ylim)  
+    plt.tight_layout()
+        
+def pngs_to_gif(file_list, export_filename=None, duration=3000, loop=0):
+    images = [Image.open(filename) for filename in file_list]
+    # Assuming all images have the same size, you can use the size of the first image
+    size = images[0].size
+    if export_filename is None:
+        export_filename = fd.asksaveasfilename(defaultextension=".gif")
+        if not export_filename:
+            return  # User canceled the save dialog
+    with Image.new("RGB", size) as gif:
+        gif.save(export_filename, save_all=True, append_images=images, duration=duration, loop=loop)
+        
+def corr_analysis(corr,cols,title,plot_fig,save_fig):
+    plt.matshow(corr)
+    plt.colorbar()
+    plt.clim(-1,1)
+    plt.yticks(ticks=range(len(cols)),labels=cols)
+    plt.xticks(ticks=[],labels=[])
+    plt.title(title)
+    if save_fig:
+        plt.savefig(f'{directory}/Data/graphpics/_{title}.png',bbox_inches='tight')
+    if plot_fig:
+        plt.show()
+    lines = [''.join([str(idx) + ': ' + i for idx, i in enumerate(cols)])]
+    for i in range(len(cols) - 1):
+        for j in range(i + 1, len(cols)):
+            correlation = corr[cols[i]][cols[j]]
+            corr_str = 'no'
+            if correlation > 0.3: #weak
+                if correlation > 0.5: #medium
+                    if correlation > 0.7: #strong
+                        if correlation > 0.8: #very strong
+                            if correlation > 0.9: #extreme
+                                if correlation > 0.95: #ridic
+                                    corr_str = 'a RIDICULOUSLY +'
+                                else: corr_str = 'an extreme +'
+                            else: corr_str = 'a very strong +'
+                        else: corr_str = 'a strong +'
+                    else: corr_str = 'a medium +'
+                else: corr_str = 'a weak +'
+            elif correlation < -0.3:
+                if correlation < -0.5:
+                    if correlation < -0.7:
+                        if correlation < -0.8:
+                            if correlation < -0.9:
+                                if correlation < -0.95:
+                                    corr_str = 'a RIDICULOUSLY -'
+                                else: corr_str = 'an extreme -'
+                            else: corr_str = 'a very strong -'
+                        else: corr_str = 'a strong -'
+                    else: corr_str = 'a medium -'
+                else: corr_str = 'a weak -'
+            lines.append(f'{cols[i]} has {corr_str} correlation with {cols[j]}')
+
+    with open(f'{directory}Data/{title}{date}.txt', "w") as file:
+        for line in lines:
+            file.write(line+'\n')
+
+predictor_col = ['Hip Flexion ROM (deg)', 'Knee Flexion ROM (deg)',
+                 'Ankle Flexion ROM (deg)', 'Hip Flexion at Contact (deg)',
+                 'Knee Flexion at Contact (deg)', 'Ankle Flexion at Contact (deg)']
+val_col = ['Max Ankle Reaction Force (BW)', 'Max Reaction Force Rate (BW_s)',
+           'Max Ankle Contact Force (BW)', 'Max Contact Force Rate (BW_s)',
+           'FFT RXF','FFT JCF','RXF FE','JCF FE','FFT RXF FE','FFT JCF FE',
+           'Strain MagRate RXF','Strain MagRate JCF','Daily Impact Score']
+#%%
+clusters = [2, 3]
+figsize = [15,11]
+plots = [int(np.ceil(np.sqrt(len(val_col)))),
+         int(np.ceil(np.sqrt(len(val_col))))]
+
+for clust in clusters:
+    kmeans = KMeans(n_clusters=clust)
+    kmeans.fit(total[predictor_col])
+    labels = kmeans.labels_
+    centroids = kmeans.cluster_centers_
+    num_rows = plots[0]
+    num_cols = plots[1]
+    # Create a new figure for each cluster
+    for i, pred in enumerate(total.columns):
+        if pred in val_col:
+            continue
+        fig, axs = plt.subplots(num_rows, num_cols, figsize=figsize, squeeze=False)
+        for j, val in enumerate(val_col):
+            row = j // num_rows
+            col = j % num_cols
+            ax = axs[row, col]
+            ax.set_title(f'{clust}-cluster, kmeans (unsupervised✔)')
+            ax.scatter(total[pred], total[val], c=labels, cmap='viridis', edgecolors='black')
+            ax.set_xlabel(pred + '✔' if pred in predictor_col else pred)
+            ax.set_ylabel(val)
+        plt.tight_layout()
+        if save_fig:
+            plt.savefig(f'{directory}Data/MLpics/{pred}_kmeans_{clust}clusters.png')
+        plt.show()
+
+#%%
+if plot_fig:
+    for pred in predictor_col:
+        for val in val_col:
+            plot_2drelation(total[pred],total[val],[7,7],f'{pred} vs. {val}',
+                            pred,val,total['Landing Limbs'])
+            if save_fig:
+                plt.savefig(f'{directory}Data/graphpics/{pred}_{val}.png')
+            plt.show()
+        
+#%%
+step_size = 45
+a_lim = [0,360]
+figsize=[12,12]
+fontsize = figsize[0]*2
+num_pics = int((a_lim[1]-a_lim[0])/step_size)
+if grif:
+    if plot_fig:
+        for val in val_col:
+            rang = total[total[val]<10e10][val].max()-total[val].min()
+            for i in range(len(predictor_col)-1):
+                for j in range(len(predictor_col)-1-i):
+                    gif_files = []
+                    elev=5
+                    azim=a_lim[0]
+                    roll=0
+                    flag1 = False
+                    flag2 = False
+                    flag3 = False
+                    for k in range(num_pics):
+                        fig, ax = plt.subplots(subplot_kw={"projection": "3d"},figsize=figsize)
+                        surf = ax.scatter(total[predictor_col[i]],
+                                          total[predictor_col[i+1+j]],
+                                          total[val], c=total['Landing Limbs'],
+                                          cmap='cool', edgecolors='black', linewidths=1,
+                                          s=total['Mass']**2/(total['Mass'].max()-total['Mass'].min()))
+                        # Add texts as axis labels
+                        ax.set_xlabel(f'{predictor_col[i]}', fontsize=fontsize, color='green', labelpad=fontsize)
+                        ax.set_ylabel(f'{predictor_col[i+1+j]}', fontsize=fontsize, color='green', labelpad=fontsize)
+                        
+                        ax.tick_params(axis='both', which='major', labelsize=fontsize)
+                        ax.xaxis.set_major_locator(MaxNLocator(integer=True, prune='both', nbins=5))
+                        ax.yaxis.set_major_locator(MaxNLocator(integer=True, prune='both', nbins=5))
+                        ax.zaxis.set_major_locator(MaxNLocator(integer=True, prune='both', nbins=5))
+                        if total[total[val]<10e10][val].max() < 0:
+                            ax.invert_zaxis()
+                            ax.text(total[predictor_col[i]].max()/2,
+                                    total[predictor_col[i+j+1]].max()/2,
+                                    total[val].min()-rang*.2, f'{val}', fontsize=fontsize, color='green')
+                        else:
+                            ax.text(total[predictor_col[i]].max()/2,
+                                    total[predictor_col[i+j+1]].max()/2,
+                                    total[total[val]<10e10][val].max()+rang*.2, f'{val}', fontsize=fontsize, color='green')
+                        if flag2:
+                            azim-=step_size
+                            if azim < a_lim[0]:
+                                flag2 = False
+                        else:
+                            azim+=step_size
+                            if azim > a_lim[1]:
+                                flag2 = True
+                        ax.view_init(elev, azim, roll)
+                        
+                        plt.show()
+                        if save_fig:
+                            gif_file = f'{directory}Data/graphpics/{val}_{predictor_col[i]}_{predictor_col[i+1+j]}_{len(gif_files)}.png'
+                            gif_files.append(gif_file)
+                            fig.savefig(gif_file,bbox_inches='tight')
+                    if save_fig:
+                        pngs_to_gif(gif_files,export_filename=directory+f'Data/graphgifs/{val}_{predictor_col[i]}_{predictor_col[i+1+j]}.gif')
+
+#%%
+pred_corr = total[predictor_col].corr()
+val_corr = total[val_col].corr()
+
+corr_analysis(pred_corr,predictor_col,'Predictor Correlations',plot_fig,save_fig)
+corr_analysis(val_corr,val_col,'Outcome Correlations',plot_fig,save_fig)
