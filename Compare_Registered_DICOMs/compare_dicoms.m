@@ -242,14 +242,13 @@ function [bv, bmc, bmd] = compare_dicoms(default_directory,res, ...
 
             mask_1_ant(1:y,x+1:end,z) = mask_1(1:y,x+1:end,zs);
             mask_1_post(1+y:end,1:x,z) = mask_1(1+y:end,1:x,zs);
-            mask_1_med(1:y,x+1:end,z) = mask_1(1+y:end,x+1:end,zs);
-            mask_1_lat(1+y:end,1:x,z) = mask_1(1:y,1:x,zs);
-            allmask=mask_1_ant(:,:,zs)+mask_1_post(:,:,zs)+mask_1_med(:,:,zs)+mask_1_lat(:,:,zs);
+            mask_1_med(1+y:end,x+1:end,z) = mask_1(1+y:end,x+1:end,zs);
+            mask_1_lat(1:y,1:x,z) = mask_1(1:y,1:x,zs);
 
             mask_2_ant(1:y,x+1:end,z) = mask_2(1:y,x+1:end,zs);
             mask_2_post(1+y:end,1:x,z) = mask_2(1+y:end,1:x,zs);
-            mask_2_med(1:y,x+1:end,z) = mask_2(1+y:end,x+1:end,zs);
-            mask_2_lat(1+y:end,1:x,z) = mask_2(1:y,1:x,zs);
+            mask_2_med(1+y:end,x+1:end,z) = mask_2(1+y:end,x+1:end,zs);
+            mask_2_lat(1:y,1:x,z) = mask_2(1:y,1:x,zs);
 
             mask_1_lat(y+1,x_neg:x,z) = 1;
             mask_1_lat(y_top:y,x+1,z) = 1;
