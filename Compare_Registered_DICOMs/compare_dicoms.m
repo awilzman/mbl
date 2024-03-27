@@ -3,7 +3,7 @@
 % calculate intensity [unit] differences between t1 and t2 of
 % bone volume (bv) [cm^3], bone mineral content (bmc) [g], and 
 % bone mineral density [g/cm^3] (bmd) 
-%               % Anterior-Medial   % Anterior-Lateral  % Posterior-Medial % Posterior-Lateral
+%               % Anterior          % Posterior         % Medial           % Lateral
 % Scan 1        % (1,1)             % (1,2)             % (1,3)            % (1,4)
 % Scan 2        % (2,1)             % (2,2)             % (2,3)            % (2,4)
 % Difference    % (3,1)             % (3,2)             % (3,3)            % (3,4)
@@ -13,15 +13,8 @@
 % Updated ARW 09/29/23
 % Updated ARW 11/01/23
 % Updated ARW 01/15/24
-% eg
-% default_directory = 'C:\Users\arwilzman\Documents'; or your user folder
-% Z:\_Lab Personnel Folders\Andrew\Codes\Compare_Registered_DICOMs
-% res = 82;
-% LCV_name = 'LCV_example1';
-% mask1_name = 'RAW1_example1';
-% mask2_name = 'RAWROT2_example1';
 % calibrate_slope = 0.00035619;
-% calibrate_int = -0.00365584; % Z:\_SOPs\Scanner\Scanner Density Calibration Info
+% calibrate_int = -0.00365584; %
 % [bv,bmc,bmd] = compare_dicoms(default_directory,res,LCV_name,mask1_name,mask2_name,calibrate_slope,calibrate_int)
 
 
@@ -30,7 +23,7 @@
 % microstructural data from spine, femur, iliac crest and calcaneus. 
 % J Bone Miner Res 1999;14(7):1167-74.
 % MARA14 LCV volume = 6.743 cm^3
-function [bv, bmc, bmd] = compare_dicoms(default_directory,res, ...
+function [tv, bv, bmc, bmd] = compare_dicoms(default_directory,res, ...
     LCV_name,mask1_name,mask2_name,calibrate_slope,calibrate_int, ...
     baseline,first_full_slice)
 
@@ -50,6 +43,19 @@ function [bv, bmc, bmd] = compare_dicoms(default_directory,res, ...
     mask_1 = pad_3dmat(mask_1);
     mask_2 = pad_3dmat(mask_2);
     
+    % Zero all values in mask_1 and mask_2 that correspond to 0 elements in
+    % mask_LCV
+    for i = 1:size(mask_LCV,3) 
+        for j = 1:size(mask_LCV,1)
+            for k = 1:size(mask_LCV,2)
+                if mask_LCV(j,k,i) == 0
+                    mask_1(j,k,i) = 0; % Set corresponding elements in mask_1 to 0
+                    mask_2(j,k,i) = 0; % Set corresponding elements in mask_2 to 0
+                end
+            end
+        end
+    end
+
     % Fill LCV by including all values that exist above a threshold in scans 1 and 2
     for i = 1:size(mask_LCV,3) 
         for j = 1:size(mask_LCV,1)
@@ -171,6 +177,7 @@ function [bv, bmc, bmd] = compare_dicoms(default_directory,res, ...
     % Calculate metrics
     % 4 sections, anterior/posterior and medial/lateral columns
     % 3 masks, time 1, 2, and difference (in order) rows
+    tv = zeros(3,4);
     bv = zeros(3,4);
     bmc = zeros(3,4);
     bmd = zeros(3,4);
@@ -276,14 +283,18 @@ function [bv, bmc, bmd] = compare_dicoms(default_directory,res, ...
         end
     end
     
-    [bv(1,1), bmc(1,1), bmd(1,1)] = bv_bmc(mask_1_ant,res,calibrate_slope,calibrate_int);
-    [bv(1,2), bmc(1,2), bmd(1,2)] = bv_bmc(mask_1_post,res,calibrate_slope,calibrate_int);
-    [bv(1,3), bmc(1,3), bmd(1,3)] = bv_bmc(mask_1_med,res,calibrate_slope,calibrate_int);
-    [bv(1,4), bmc(1,4), bmd(1,4)] = bv_bmc(mask_1_lat,res,calibrate_slope,calibrate_int);
-    [bv(2,1), bmc(2,1), bmd(2,1)] = bv_bmc(mask_2_ant,res,calibrate_slope,calibrate_int);
-    [bv(2,2), bmc(2,2), bmd(2,2)] = bv_bmc(mask_2_post,res,calibrate_slope,calibrate_int);
-    [bv(2,3), bmc(2,3), bmd(2,3)] = bv_bmc(mask_2_med,res,calibrate_slope,calibrate_int);
-    [bv(2,4), bmc(2,4), bmd(2,4)] = bv_bmc(mask_2_lat,res,calibrate_slope,calibrate_int);
+    [tv(1,1), bv(1,1), bmc(1,1), bmd(1,1)] = bv_bmc(mask_1_ant,res,calibrate_slope,calibrate_int);
+    [tv(1,2), bv(1,2), bmc(1,2), bmd(1,2)] = bv_bmc(mask_1_post,res,calibrate_slope,calibrate_int);
+    [tv(1,3), bv(1,3), bmc(1,3), bmd(1,3)] = bv_bmc(mask_1_med,res,calibrate_slope,calibrate_int);
+    [tv(1,4), bv(1,4), bmc(1,4), bmd(1,4)] = bv_bmc(mask_1_lat,res,calibrate_slope,calibrate_int);
+    [tv(2,1), bv(2,1), bmc(2,1), bmd(2,1)] = bv_bmc(mask_2_ant,res,calibrate_slope,calibrate_int);
+    [tv(2,2), bv(2,2), bmc(2,2), bmd(2,2)] = bv_bmc(mask_2_post,res,calibrate_slope,calibrate_int);
+    [tv(2,3), bv(2,3), bmc(2,3), bmd(2,3)] = bv_bmc(mask_2_med,res,calibrate_slope,calibrate_int);
+    [tv(2,4), bv(2,4), bmc(2,4), bmd(2,4)] = bv_bmc(mask_2_lat,res,calibrate_slope,calibrate_int);
+    tv(3,1) = tv(2,1)-tv(1,1);
+    tv(3,2) = tv(2,2)-tv(1,2);
+    tv(3,3) = tv(2,3)-tv(1,3);
+    tv(3,4) = tv(2,4)-tv(1,4);
     bv(3,1) = bv(2,1)-bv(1,1);
     bv(3,2) = bv(2,2)-bv(1,2);
     bv(3,3) = bv(2,3)-bv(1,3);
@@ -315,8 +326,12 @@ function totalArea = calculateFilledArea(array)
     end
 end
 
-function [bv, bmc, bmd] = bv_bmc(mask, res, slope, int)
-    bv = 0; 
+function [tv, bv, bmc, bmd] = bv_bmc(mask, res, slope, int)
+    tv = 0;    
+    bv = 0;
+    bmd = 0;
+    bmc = 0;
+    
     vox_ed = res / 10000.0; % um to cm
     for z = 1:size(mask, 3)
         slice = mask(:, :, z);
@@ -328,17 +343,17 @@ function [bv, bmc, bmd] = bv_bmc(mask, res, slope, int)
         end
         area = area * vox_ed^2;
         vol = area * vox_ed;
-        bv = bv + vol; %get BV as well, this is TV
+        bv_vol = sum(sum(slice>1))*vox_ed^3;
+        slice_density = mean(mean(slice(slice>1))) * slope + int;
+        slice_content = slice_density * bv_vol;
+        slice_density = slice_content / vol;
+
+        tv = tv + vol; %Total Volume
+        bv = bv + bv_vol; %Bone Volume
+        bmd = bmd + slice_density;
+        bmc = bmc + slice_content;
     end
-    bmd = mean(mask(mask > 0)); % Mean of all values > 0
-                                % can we get the total raw mask? 
-                                % intersect raw DICOMs with BLCK instead of
-                                % SEG
-    count = nnz(mask > 0);
-    occupied_vol = count * (vox_ed^3);
-    bmd = bmd*slope + int;
-    bmc = bmd * occupied_vol;
-    bmd = bmc / bv;
+    bmd = bmd / size(mask,3);
 end
 
 function [new_mask] = rotate_mask(mask, rotationAngle, origins, interpolationMethod)
