@@ -15,6 +15,7 @@ from tkinter import filedialog as fd
 from tkinter import messagebox
 from PIL import Image, ImageSequence
 from sklearn.cluster import KMeans
+from scipy.stats import t
 
 date = datetime.datetime.now()
 month = date.strftime("%m")
@@ -25,7 +26,7 @@ directory = 'Z:/_Current IRB Approved Studies/Jumping_Study/'
 total = pd.read_csv(directory+f'Data/Jump_Study_Data{date}.csv')
 
 plot_fig = True
-save_fig = True
+save_fig = False
 grif = False
 
 def plot_2drelation(pred, val, figsize=None, title='', xlab='', ylab='', 
@@ -61,52 +62,42 @@ def pngs_to_gif(file_list, export_filename=None, duration=3000, loop=0):
             return  # User canceled the save dialog
     with Image.new("RGB", size) as gif:
         gif.save(export_filename, save_all=True, append_images=images, duration=duration, loop=loop)
-        
-def corr_analysis(corr,cols,title,plot_fig,save_fig):
-    plt.matshow(corr)
-    plt.colorbar()
-    plt.clim(-1,1)
-    plt.yticks(ticks=range(len(cols)),labels=cols)
-    plt.xticks(ticks=[],labels=[])
-    plt.title(title)
-    if save_fig:
-        plt.savefig(f'{directory}/Data/graphpics/_{title}.png',bbox_inches='tight',dpi=500)
-    if plot_fig:
-        plt.show()
-    lines = [''.join([str(idx) + ': ' + i for idx, i in enumerate(cols)])]
+
+def corr_analysis(corr, cols, title, plot_fig, save_fig):
+    # Initialize a DataFrame to store the results
+    result_df = pd.DataFrame(index=cols, columns=cols, dtype=str)
+    
+    # Calculate significance level (e.g., alpha = 0.05)
+    alpha = 0.05
+    
     for i in range(len(cols) - 1):
         for j in range(i + 1, len(cols)):
             correlation = corr[cols[i]][cols[j]]
-            corr_str = 'no'
-            if correlation > 0.3: #weak
-                if correlation > 0.5: #medium
-                    if correlation > 0.7: #strong
-                        if correlation > 0.8: #very strong
-                            if correlation > 0.9: #extreme
-                                if correlation > 0.95: #ridic
-                                    corr_str = 'a RIDICULOUSLY +'
-                                else: corr_str = 'an extreme +'
-                            else: corr_str = 'a very strong +'
-                        else: corr_str = 'a strong +'
-                    else: corr_str = 'a medium +'
-                else: corr_str = 'a weak +'
-            elif correlation < -0.3:
-                if correlation < -0.5:
-                    if correlation < -0.7:
-                        if correlation < -0.8:
-                            if correlation < -0.9:
-                                if correlation < -0.95:
-                                    corr_str = 'a RIDICULOUSLY -'
-                                else: corr_str = 'an extreme -'
-                            else: corr_str = 'a very strong -'
-                        else: corr_str = 'a strong -'
-                    else: corr_str = 'a medium -'
-                else: corr_str = 'a weak -'
-            lines.append(f'{cols[i]} has {corr_str} correlation with {cols[j]}')
+            p_value = 2 * (1 - t.cdf(abs(correlation) * np.sqrt(len(corr) - 2), df=len(corr) - 2))
+            if p_value < alpha:
+                significance = "significant"
+            else:
+                significance = "not significant"
+            
+            # Store the correlation coefficient and p-value in the DataFrame
+            result_df.at[cols[i], cols[j]] = f"{correlation:.4f}, p-value: {p_value:.4f}, {significance}"
+            result_df.at[cols[j], cols[i]] = f"{correlation:.4f}, p-value: {p_value:.4f}, {significance}"
 
-    with open(f'{directory}Data/{title}{date}.txt', "w") as file:
-        for line in lines:
-            file.write(line+'\n')
+    # Save the DataFrame to a text file
+    result_df.to_csv(f'{directory}/Data/{title}_{date}.csv', sep=',')
+    
+    # Plot the correlation matrix
+    plt.imshow(corr, cmap='coolwarm', interpolation='nearest')
+    plt.colorbar()
+    plt.xticks(ticks=range(len(cols)), labels=cols, rotation='vertical')
+    plt.yticks(ticks=range(len(cols)), labels=cols)
+    plt.title(title)
+    
+    # Save or show the plot
+    if save_fig:
+        plt.savefig(f'{directory}/Data/graphpics/{title}.png', bbox_inches='tight', dpi=500)
+    if plot_fig:
+        plt.show()
 
 predictor_col = ['Hip Flexion ROM', 'Knee Flexion ROM',
                  'Ankle Flexion ROM', 'Hip Flexion at Contact',

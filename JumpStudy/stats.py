@@ -173,11 +173,18 @@ def Lasso_split_n_train(X,y,test_size,show_fig,plt_file='',title=''):
     r2 = r2_score(y_test, y_pred)
     residuals = y_test - y_pred
     
+    # Significance testing
+    n = len(y_train)
+    p = X_train_scaled.shape[1]
+    dof = max(0, n - p)  # Degrees of freedom
+    t_scores = lasso_model.coef_ / np.sqrt((mse / dof) * np.linalg.inv(np.dot(X_train_scaled.T, X_train_scaled)).diagonal())
+    p_values = [2 * (1 - stats.t.cdf(np.abs(score), dof)) for score in t_scores]
+    
+    # Plotting
     if show_fig or plt_file != '':
-        
         plt.figure(figsize=(8, 8)) 
-        plt.scatter(y_test, y_pred)  # Scatter plot of actual vs. predicted values
-        plt.plot([min(y_test), max(y_test)], [min(y_test), max(y_test)], '--', color='red')  # Diagonal line
+        plt.scatter(y_test, y_pred)
+        plt.plot([min(y_test), max(y_test)], [min(y_test), max(y_test)], '--', color='red')
         plt.xlabel('Actual',fontsize=16)
         plt.ylabel('Predicted',fontsize=16)
         plt.title(title,fontsize=20)
@@ -185,8 +192,9 @@ def Lasso_split_n_train(X,y,test_size,show_fig,plt_file='',title=''):
             plt.savefig(plt_file)
         if show_fig:
             plt.show()
+        
         plt.figure(figsize=(8, 8)) 
-        stats.probplot(residuals,plot=plt)
+        stats.probplot(residuals, plot=plt)
         plt.title(f'{title}\nQ-Q Plot',fontsize=20)
         plt.xlabel('Fitted values',fontsize=16)
         plt.ylabel('Residuals',fontsize=16)
@@ -194,8 +202,8 @@ def Lasso_split_n_train(X,y,test_size,show_fig,plt_file='',title=''):
             plt.savefig(f"{plt_file[:-4]}_residuals.png")
         if show_fig:
             plt.show()
-        
-    return mse, mae, r2, lasso_model
+    
+    return mse, mae, r2, lasso_model, p_values
 #%%
 for val in val_col:
     formula = f"{val} ~ Height + Q('Landing Limbs')"
@@ -368,12 +376,13 @@ for i in val_col:
     if file_path_ != '':
         file_path_ += f'{i}_LASSO_kinematics_only.png'
     title_ = f'{i} LASSO Regression Test Results,\nkinematic predictors only'
-    mse,mae,r2,lasso_model = Lasso_split_n_train(X,data[i],test_size,show_fig,file_path_,title_)
+    mse,mae,r2,lasso_model,p_vals = Lasso_split_n_train(X,data[i],test_size,show_fig,file_path_,title_)
     coefficients = lasso_model.coef_
     result_dict = {'outcome': [f'{i}_kinematics only'], 'mean': data[i].mean(),
                    'std': data[i].std(), 'mse': [mse], 'mae': [mae], 'r2': [r2]}
     for j, coef in enumerate(coefficients):
         result_dict[f'coef_{X.columns[j]}'] = coef
+        result_dict[f'p_value_{X.columns[j]}'] = p_vals[j]
     outcome_df = pd.DataFrame(result_dict, index=[0])
     
     metrics = pd.concat([metrics, outcome_df], axis=0, ignore_index=True)
@@ -384,12 +393,13 @@ for i in complex2:
     if file_path_ != '':
         file_path_ += f'{i}_LASSO.png'
     title_ = f'{i} LASSO Regression Test Results'
-    mse,mae,r2,lasso_model = Lasso_split_n_train(X,data[i],test_size,show_fig,file_path_,title_)
+    mse,mae,r2,lasso_model,p_vals = Lasso_split_n_train(X,data[i],test_size,show_fig,file_path_,title_)
     coefficients = lasso_model.coef_
     result_dict = {'outcome': [f'{i}'], 'mean': data[i].mean(),
                    'std': data[i].std(), 'mse': [mse], 'mae': [mae], 'r2': [r2]}
     for j, coef in enumerate(coefficients):
         result_dict[f'coef_{X.columns[j]}'] = coef
+        result_dict[f'p_value_{X.columns[j]}'] = p_vals[j]
     outcome_df = pd.DataFrame(result_dict, index=[0])
     metrics = pd.concat([metrics, outcome_df], axis=0, ignore_index=True)
     
@@ -399,12 +409,13 @@ for i in complex3:
     if file_path_ != '':
         file_path_ += f'{i}_LASSO.png'
     title_ = f'{i} LASSO Regression Test Results'
-    mse,mae,r2,lasso_model = Lasso_split_n_train(X,data[i],test_size,show_fig,file_path_,title_)
+    mse,mae,r2,lasso_model,p_vals = Lasso_split_n_train(X,data[i],test_size,show_fig,file_path_,title_)
     coefficients = lasso_model.coef_
     result_dict = {'outcome': [f'{i}'], 'mean': data[i].mean(),
                    'std': data[i].std(), 'mse': [mse], 'mae': [mae], 'r2': [r2]}
     for j, coef in enumerate(coefficients):
         result_dict[f'coef_{X.columns[j]}'] = coef
+        result_dict[f'p_value_{X.columns[j]}'] = p_vals[j]
     outcome_df = pd.DataFrame(result_dict, index=[0])
     metrics = pd.concat([metrics, outcome_df], axis=0, ignore_index=True)
     
@@ -414,12 +425,13 @@ for i in complex4:
     if file_path_ != '':
         file_path_ += f'{i}_LASSO.png'
     title_ = f'{i} LASSO Regression Test Results'
-    mse,mae,r2,lasso_model = Lasso_split_n_train(X,data[i],test_size,show_fig,file_path_,title_)
+    mse,mae,r2,lasso_model,p_vals = Lasso_split_n_train(X,data[i],test_size,show_fig,file_path_,title_)
     coefficients = lasso_model.coef_
     result_dict = {'outcome': [f'{i}'], 'mean': data[i].mean(),
                    'std': data[i].std(), 'mse': [mse], 'mae': [mae], 'r2': [r2]}
     for j, coef in enumerate(coefficients):
         result_dict[f'coef_{X.columns[j]}'] = coef
+        result_dict[f'p_value_{X.columns[j]}'] = p_vals[j]
     outcome_df = pd.DataFrame(result_dict, index=[0])
     metrics = pd.concat([metrics, outcome_df], axis=0, ignore_index=True)
     
@@ -429,12 +441,13 @@ for i in complex5:
     if file_path_ != '':
         file_path_ += f'{i}_LASSO.png'
     title_ = f'{i} LASSO Regression Test Results'
-    mse,mae,r2,lasso_model = Lasso_split_n_train(X,data[i],test_size,show_fig,file_path_,title_)
+    mse,mae,r2,lasso_model,p_vals = Lasso_split_n_train(X,data[i],test_size,show_fig,file_path_,title_)
     coefficients = lasso_model.coef_
     result_dict = {'outcome': [f'{i}'], 'mean': data[i].mean(),
                    'std': data[i].std(), 'mse': [mse], 'mae': [mae], 'r2': [r2]}
     for j, coef in enumerate(coefficients):
         result_dict[f'coef_{X.columns[j]}'] = coef
+        result_dict[f'p_value_{X.columns[j]}'] = p_vals[j]
     outcome_df = pd.DataFrame(result_dict, index=[0])
     metrics = pd.concat([metrics, outcome_df], axis=0, ignore_index=True)
     

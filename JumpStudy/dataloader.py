@@ -24,8 +24,8 @@ day = date.strftime("%d")
 year = date.strftime("%y")
 date = ('_'+month + '_' + day + '_' + year)
 
-plot_fig = False
-lots_plots = False
+plot_fig = True
+lots_plots = True
 save_fig = False
 reload_data = True
 save_data = True
@@ -33,7 +33,6 @@ save_data = True
 first_load = False #ONLY REQUIRED IF STATIC OPTIMIZATION WAS RERUN FOR ANY TRIAL
 
 directory = 'Z:/_Current IRB Approved Studies/Jumping_Study/'
-data_name = 'Jump_Study_Data'
 study = 'JS'
 prefix = ['S','F'] #For joint angle search
 trialtypes = ['SLJump','DropJump']
@@ -43,21 +42,6 @@ max_trials = 25
 code = range(1,max_pts+1)
 tr_names=trialtypes
 trials = range(1,max_trials+1)
-# I want code to find the most recent run 
-# =============================================================================
-# flag=True
-# last_date=datetime.datetime.now()
-# while flag:
-#     for filename in os.listdir(f'{directory}Data'):
-#         if os.path.isfile(f'{directory}Data/{data_name}{date}.csv'):
-#             flag=False
-#             break
-#         else:
-#             last_date -= timedelta(days=1)
-#             month = date.strftime("%m")
-#             day = date.strftime("%d")
-#             year = date.strftime("%y")
-#             date = ('_'+month + '_' + day + '_' + year)
 # =============================================================================
 
 def read_mot(file,directory):
@@ -237,27 +221,6 @@ def bulk_loader(directory,study,prefix,code,tr_names,trials,suffix='.sto'):
                                 ram['Landing Limbs'] = 2
                             The_Data = pd.concat([The_Data,ram], ignore_index=True)
     The_Data.columns = header
-    # Age-match tibia stiffness for those without FE data
-# =============================================================================
-#           I don't want to do this anymore
-#     for i in pd.unique(The_Data['ID']):
-#         flag = True
-#         tol = 5
-#         while flag:
-#             if The_Data[The_Data['ID'] == i]['Tibia Stiffness'].iloc[0] == 1:
-#                 match_s = The_Data[The_Data['ID'] == i]['Sex'].iloc[0]
-#                 match_m = The_Data[The_Data['ID'] == i]['Mass'].iloc[0]
-#                 condition = ((The_Data['Sex']==match_s)&
-#                              (The_Data['Tibia Stiffness']>1))
-#                 for j in pd.unique(The_Data[condition]['ID']):
-#                     mass = The_Data[The_Data['ID'] == j]['Mass'].iloc[0]
-#                     if  mass >= match_m - tol and mass <= match_m + tol:
-#                         The_Data.loc[The_Data['ID'] == i,'Tibia Stiffness'] = The_Data[The_Data['ID'] == j]['Tibia Stiffness'].iloc[0]
-#                         flag = False
-#                 tol += 1
-#             else:
-#                 flag = False
-# =============================================================================
     mask = The_Data.columns.str.startswith('delete')
     The_Data = The_Data.drop(columns=The_Data.columns[mask])
     return The_Data
@@ -550,10 +513,11 @@ for index, listed_trial in The_List.iterrows():
     The_List.loc[condition_list, 'IMU_FFT'] = abs(imu_fft) if imu_fft is not None else None
     #https://doi.org/10.1002/jbmr.3999
     #https://doi.org/10.1016/j.jbiomech.2010.03.021
+    
     if lots_plots:
         if save_fig | plot_fig:
-            plt.scatter(trial['time'],
-                        trial['Right Ankle Force Y']/trial['MassN'])
+            plt.scatter(trial_data['time'],
+                        trial_data['Right Ankle Force Y']/trial_data['MassN'])
             plt.title(f'{person} {trialtype} {t}')
             plt.ylabel(f'R ANK JCF (BW)')
             plt.xlabel('time (s)')
