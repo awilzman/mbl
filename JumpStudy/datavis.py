@@ -15,6 +15,7 @@ from tkinter import filedialog as fd
 from tkinter import messagebox
 from PIL import Image, ImageSequence
 from sklearn.cluster import KMeans
+
 date = datetime.datetime.now()
 month = date.strftime("%m")
 day = date.strftime("%d")
@@ -25,7 +26,7 @@ total = pd.read_csv(directory+f'Data/Jump_Study_Data{date}.csv')
 
 plot_fig = True
 save_fig = True
-grif = False 
+grif = False
 
 def plot_2drelation(pred, val, figsize=None, title='', xlab='', ylab='', 
                     colors=None, ylim=None, xlim=None):
@@ -69,7 +70,7 @@ def corr_analysis(corr,cols,title,plot_fig,save_fig):
     plt.xticks(ticks=[],labels=[])
     plt.title(title)
     if save_fig:
-        plt.savefig(f'{directory}/Data/graphpics/_{title}.png',bbox_inches='tight')
+        plt.savefig(f'{directory}/Data/graphpics/_{title}.png',bbox_inches='tight',dpi=500)
     if plot_fig:
         plt.show()
     lines = [''.join([str(idx) + ': ' + i for idx, i in enumerate(cols)])]
@@ -107,39 +108,100 @@ def corr_analysis(corr,cols,title,plot_fig,save_fig):
         for line in lines:
             file.write(line+'\n')
 
-predictor_col = ['Hip Flexion ROM (deg)', 'Knee Flexion ROM (deg)',
-                 'Ankle Flexion ROM (deg)', 'Hip Flexion at Contact (deg)',
-                 'Knee Flexion at Contact (deg)', 'Ankle Flexion at Contact (deg)']
-val_col = ['Max Ankle Reaction Force (BW)', 'Max Reaction Force Rate (BW_s)',
-           'Max Ankle Contact Force (BW)', 'Max Contact Force Rate (BW_s)',
-           'FFT RXF','FFT JCF','RXF FE','JCF FE','FFT RXF FE','FFT JCF FE',
-           'Strain MagRate RXF','Strain MagRate JCF','Daily Impact Score']
+predictor_col = ['Hip Flexion ROM', 'Knee Flexion ROM',
+                 'Ankle Flexion ROM', 'Hip Flexion at Contact',
+                 'Knee Flexion at Contact', 'Ankle Flexion at Contact']
+val_col = ['DIS','IMU_FFT',
+           'RXF','RXF_R','RXF_FFT',
+           'JCF', 'JCF_R','JCF_FFT',
+           'RXF_FE','RXF_FE_FFT','RXF_SMR',
+           'JCF_FE','JCF_FE_FFT','JCF_SMR']
+
 #%%
+num_rows = 5
+num_cols = 3
+figsize = [14,18]
+fontsize = 15
+colors = ['fuchsia','cyan']
+for i, pred in enumerate(total.columns):
+    counts = np.zeros(num_rows)
+    if pred in val_col:
+        continue
+    fig, axs = plt.subplots(num_rows, num_cols, figsize=figsize, squeeze=False)
+    for j, val in enumerate(val_col):
+        if val == 'DIS' or val == 'IMU_FFT':
+            row = 0
+        elif val == 'RXF' or val == 'RXF_R' or val == 'RXF_FFT':
+            row = 1
+        elif val == 'JCF' or val == 'JCF_R' or val == 'JCF_FFT':
+            row = 2
+        elif 'RXF' in val:
+            row = 3
+        else:
+            row = 4
+            
+        ax = axs[row, int(counts[row])]
+        if pred == 'Landing Limbs':
+            box1 = []
+            box2 = []
+            box1 = total[total['Landing Limbs']<1.5][val].abs().dropna()
+            box2 = total[total['Landing Limbs']>1.5][val].abs().dropna()
+            box1.dropna()
+            box2.dropna()
+            box_data = [box1,box2]
+            box = ax.boxplot(box_data,patch_artist=True,labels=[1,2])
+            box['boxes'][0].set_facecolor('cyan')
+            box['boxes'][1].set_facecolor('fuchsia')
+            ax.tick_params(axis='x',labelsize=fontsize*1.5)
+        else:    
+            ax.scatter(total[pred], abs(total[val]), 
+                       c=total['Landing Limbs'], cmap='cool', edgecolors='black')
+        ax.set_ylabel(val,fontsize=fontsize)
+        if counts[row] == 1 and row == 0:
+            ax.set_title(f'{pred}',fontsize=fontsize*2)    
+        counts[row] += 1
+    plt.tight_layout()
+    if save_fig:
+        plt.savefig(f'{directory}Data/graphpics/{pred}_all_outcomes.png',dpi=500)
+    plt.show()
+#%%
+
 clusters = [2, 3]
-figsize = [15,11]
-plots = [int(np.ceil(np.sqrt(len(val_col)))),
-         int(np.ceil(np.sqrt(len(val_col))))]
+num_rows = 5
+num_cols = 3
+figsize = [14,18]
+fontsize = 15
 
 for clust in clusters:
     kmeans = KMeans(n_clusters=clust)
     kmeans.fit(total[predictor_col])
     labels = kmeans.labels_
     centroids = kmeans.cluster_centers_
-    num_rows = plots[0]
-    num_cols = plots[1]
     # Create a new figure for each cluster
     for i, pred in enumerate(total.columns):
+        counts = np.zeros(num_rows)
         if pred in val_col:
             continue
         fig, axs = plt.subplots(num_rows, num_cols, figsize=figsize, squeeze=False)
         for j, val in enumerate(val_col):
-            row = j // num_rows
-            col = j % num_cols
-            ax = axs[row, col]
+            if val == 'DIS' or val == 'IMU_FFT':
+                row = 0
+            elif val == 'RXF' or val == 'RXF_R' or val == 'RXF_FFT':
+                row = 1
+            elif val == 'JCF' or val == 'JCF_R' or val == 'JCF_FFT':
+                row = 2
+            elif 'RXF' in val:
+                row = 3
+            else:
+                row = 4
+            ax = axs[row, int(counts[row])]
             ax.set_title(f'{clust}-cluster, kmeans (unsupervised✔)')
             ax.scatter(total[pred], total[val], c=labels, cmap='viridis', edgecolors='black')
             ax.set_xlabel(pred + '✔' if pred in predictor_col else pred)
             ax.set_ylabel(val)
+            if counts[row] == 1 and row == 0:
+                ax.set_title(f'{pred}',fontsize=fontsize*2)    
+            counts[row] += 1
         plt.tight_layout()
         if save_fig:
             plt.savefig(f'{directory}Data/MLpics/{pred}_kmeans_{clust}clusters.png')
@@ -173,7 +235,7 @@ if grif:
                     roll=0
                     flag1 = False
                     flag2 = False
-                    flag3 = False
+                    flag3 = FalseF
                     for k in range(num_pics):
                         fig, ax = plt.subplots(subplot_kw={"projection": "3d"},figsize=figsize)
                         surf = ax.scatter(total[predictor_col[i]],
