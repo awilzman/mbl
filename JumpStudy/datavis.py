@@ -26,8 +26,8 @@ directory = 'Z:/_Current IRB Approved Studies/Jumping_Study/'
 total = pd.read_csv(directory+f'Data/Jump_Study_Data{date}.csv')
 
 plot_fig = True
-save_fig = False
-grif = False
+save_fig = True
+grif = True
 
 def plot_2drelation(pred, val, figsize=None, title='', xlab='', ylab='', 
                     colors=None, ylim=None, xlim=None):
@@ -226,7 +226,7 @@ if grif:
                     roll=0
                     flag1 = False
                     flag2 = False
-                    flag3 = FalseF
+                    flag3 = False
                     for k in range(num_pics):
                         fig, ax = plt.subplots(subplot_kw={"projection": "3d"},figsize=figsize)
                         surf = ax.scatter(total[predictor_col[i]],

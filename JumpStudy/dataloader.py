@@ -26,7 +26,7 @@ date = ('_'+month + '_' + day + '_' + year)
 
 plot_fig = True
 lots_plots = True
-save_fig = False
+save_fig = True
 reload_data = True
 save_data = True
 
@@ -254,7 +254,7 @@ def fft_int(time, force, stiff=None, threshold=0.9):
     fft_freq = fft_freq[:len(fft_freq)//2 - 1]
     
     integral = 0
-    step = (fft_freq[1]-fft_freq[0])*2
+    step = (fft_freq[1] - fft_freq[0]) / 2
     for i, j in enumerate(fft_force):
         integral += j * step
         
@@ -518,9 +518,9 @@ for index, listed_trial in The_List.iterrows():
         if save_fig | plot_fig:
             plt.scatter(trial_data['time'],
                         trial_data['Right Ankle Force Y']/trial_data['MassN'])
-            plt.title(f'{person} {trialtype} {t}')
-            plt.ylabel(f'R ANK JCF (BW)')
-            plt.xlabel('time (s)')
+            #plt.title(f'{person} {trialtype} {t}', fontsize=20)
+            plt.ylabel(f'Contact Force (BW)', fontsize=20)
+            plt.xlabel('time (s)', fontsize=20)
             plt.ylim([0,-20])
             plt.tight_layout()
         if save_fig:

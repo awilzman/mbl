@@ -147,6 +147,7 @@ def fit_n_print_LM(X, y, alpha=0.05, show_fig=True, plt_file=''):
     
     return coefficients, intercept, f_statistic, total_r2, p_value_total
 
+# Function to perform Bonferroni correction on DataFrame
 def bonf(df,alpha=0.05):
     df = df.sort_values(by='P-value').reset_index()
     df.columns = ['old index'] + list(df.columns[1:])
@@ -156,6 +157,7 @@ def bonf(df,alpha=0.05):
     df = df.drop(columns='old index')
     return df
 
+# Function to perform LASSO regression, split data, and train model
 def Lasso_split_n_train(X,y,test_size,show_fig,plt_file='',title=''):
     y = y.dropna()
     X = X.loc[y.index]
@@ -205,6 +207,7 @@ def Lasso_split_n_train(X,y,test_size,show_fig,plt_file='',title=''):
     
     return mse, mae, r2, lasso_model, p_values
 #%%
+# Loop through each outcome column
 for val in val_col:
     formula = f"{val} ~ Height + Q('Landing Limbs')"
     ram_data = data.dropna(subset=[val])
