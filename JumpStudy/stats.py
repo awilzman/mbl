@@ -24,7 +24,7 @@ from sklearn.linear_model import LassoCV
 from sklearn.linear_model import LinearRegression
 from sklearn.feature_selection import f_regression
 
-save_fig = True
+save_fig = False
 show_fig = True
 save_results = True
 
