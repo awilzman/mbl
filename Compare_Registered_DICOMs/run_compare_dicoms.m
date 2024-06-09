@@ -1,5 +1,5 @@
 clear %save data before starting
-directory = 'C:\Users\arwilzman\OneDrive - Worcester Polytechnic Institute (wpi.edu)\Documents\Desktop\Compare_Registered_DICOMs\'; %end slash is important
+directory = ''; %end slash is important
 res = 82;
 calibrate_slope = 0.000357;
 calibrate_int = -0.0012625; 
@@ -34,9 +34,16 @@ output = [labels,output];
 
 % Export to Excel
 excelFileName = 'output.xlsx';
+% Loop through each subject
 for j = 2:length(subjects)+1
-    writematrix(output{1, j}, excelFileName, 'Sheet', 1, 'Range', ['A' num2str(6*j-5)]);
-    for i = 2:4
-        writematrix(output{i, j}, excelFileName, 'Sheet', 1, 'Range', ['A' num2str(6*j-7+(i-1)*4) ':' 'F' num2str(6*j-3+(i-1)*4)]);
+    % Write the file name
+    writematrix(output{1, 2}, excelFileName, 'Sheet', 1, 'Range', ['A' num2str(18*(j-2)+1)]);
+    for i = 2:5
+        % Calculate the starting row for this data block
+        startRow = (18 * (j - 2)) + (i - 1) * 4;
+        label = output{i,1};
+        dataMatrix = output{i,2};
+        writematrix(label, excelFileName, 'Sheet', 1, 'Range', ['A' num2str(startRow)]);
+        writematrix(dataMatrix, excelFileName, 'Sheet', 1, 'Range', ['B' num2str(startRow)]);
     end
 end
