@@ -5,7 +5,6 @@ Created on Thu Sep 12 00:49:30 2024
 @author: arwilzman
 """
 
-import pandas as pd
 import numpy as np
 import os
 import argparse
