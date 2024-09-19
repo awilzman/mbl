@@ -17,13 +17,12 @@ class tet10_encoder(nn.Module):
             bidirectional=bidirectional,
             batch_first=True
         )
-        self.dropout = nn.Dropout(0.1)
         # Output size depends on whether the GRU is bidirectional
         self.fc1 = nn.Linear(hidden_size * (2 if bidirectional else 1), hidden_size)
         self.fc2 = nn.Linear(hidden_size, hidden_size)
-        self.fc3 = nn.Linear(hidden_size, hidden_size)
         
-    def forward(self, x, lengths):
+    def forward(self, x):
+        lengths = (x != 0).sum(dim=1)[:,0].detach().cpu()
         # Pack padded sequences for variable-length inputs
         packed_input = nn.utils.rnn.pack_padded_sequence(x, lengths, batch_first=True, enforce_sorted=False)
         packed_output, _ = self.gru(packed_input)
@@ -32,8 +31,7 @@ class tet10_encoder(nn.Module):
         last_hidden_states = output[torch.arange(output.size(0)), lengths - 1, :]
         encoded = self.fc1(last_hidden_states)
         
-        encoded = self.fc2(torch.relu(self.dropout(encoded)))
-        encoded = self.fc3(torch.relu(self.dropout(encoded)))
+        encoded = self.fc2(torch.relu(encoded))
 
         return encoded
     
@@ -43,9 +41,10 @@ class tet10_decoder(nn.Module):
         self.codeword_size = codeword_size
         self.feature_size = 30
         
-        self.fc1 = nn.Linear(self.codeword_size + 1, 16)
-        self.dropout = nn.Dropout(0.1)
-        self.fc2 = nn.Linear(16, self.feature_size)
+        self.fc1 = nn.Linear(self.codeword_size + 1, 32)
+        self.fc2 = nn.Linear(32, self.feature_size)
+        self.fc3 = nn.Linear(self.feature_size, self.feature_size)
+        
         
     def forward(self, x, i):
         x = x.unsqueeze(1)  # Shape: [B, 1, D]
@@ -55,11 +54,9 @@ class tet10_decoder(nn.Module):
         
         x = torch.cat((x, i), dim=-1)  # Shape: [B, E, D + 1]
         
-        x = self.fc1(x)
-        x = torch.relu(x)
-        x = self.dropout(x)
-        
-        x = self.fc2(x)
+        x = torch.relu(self.fc1(x))
+        x = torch.relu(self.fc2(x))
+        x = self.fc3(x)
         
         return x
     
@@ -70,9 +67,9 @@ class tet10_densify(nn.Module):
         self.feature_size = 30
         
         # Define the network layers
-        self.fc1 = nn.Linear(self.feature_size + self.codeword_size, 16)
-        self.fc2 = nn.Linear(16, 8)
-        self.fc3 = nn.Linear(8, 1)
+        self.fc1 = nn.Linear(self.feature_size + self.codeword_size, self.codeword_size)
+        self.fc2 = nn.Linear(self.codeword_size, 32)
+        self.fc3 = nn.Linear(32, 1)
         
     def forward(self, x, encoded_features):
         # x shape: (B, E, 30) - Original features
