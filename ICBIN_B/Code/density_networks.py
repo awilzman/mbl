@@ -41,9 +41,9 @@ class tet10_decoder(nn.Module):
         self.codeword_size = codeword_size
         self.feature_size = 30
         
-        self.fc1 = nn.Linear(self.codeword_size + 1, 32)
-        self.fc2 = nn.Linear(32, self.feature_size)
-        self.fc3 = nn.Linear(self.feature_size, self.feature_size)
+        self.fc1 = nn.Linear(self.codeword_size + 1, 64)
+        self.fc2 = nn.Linear(64, 32)
+        self.fc3 = nn.Linear(32, self.feature_size)
         
         
     def forward(self, x, i):

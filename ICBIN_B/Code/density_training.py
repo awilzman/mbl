@@ -62,31 +62,30 @@ def collate_fn(batch):
     
     return features_padded, labels_padded
 
-def train(encoder, decoder, densifier, dataloader, optimizer, criterion, decode, device):
+def train(encoder, decoder, densifier, dataloader, optimizer, criterion, 
+          decode, cycles, device):
     encoder.train()
-    decoder.train()
     densifier.train()
     total_loss = 0.0
 
     for features, labels in dataloader:
         features, labels = features.to(device), labels.to(device)
-
-        encoded_features = encoder(features)
-
+        
         indices = torch.arange(features.size(1), device=device).unsqueeze(0).expand(features.size(0), -1)
         
         if(decode):
-            decoded_features = decoder(encoded_features, indices)
+            decoder.train()
+            decoded_features = features.clone()
+            for i in range(cycles):
+                encoded_features = encoder(decoded_features)
+                decoded_features = decoder(encoded_features, indices)
         else:
             decoded_features = features
+            encoded_features = encoder(decoded_features)
         
         densified_output = densifier(decoded_features, encoded_features)
         
         loss = criterion(densified_output.squeeze(-1), labels)
-        
-        if(decode):
-            loss2 = criterion(features,decoded_features)
-            loss = (loss**2+loss2**2)**0.5
             
         optimizer.zero_grad()
         loss.backward()
@@ -145,6 +144,7 @@ if __name__ == "__main__":
     parser.add_argument('-lr', type=float, default=1e-3)
     parser.add_argument('--decay', type=float, default=1e-6)
     parser.add_argument('--batch', type=int, default=32)
+    parser.add_argument('--cycles', type=int, default=1)
     parser.add_argument('--pint', type=int, default=1)
     parser.add_argument('--name', type=str, default='')
     parser.add_argument('--load', type=str, default='')
@@ -153,16 +153,16 @@ if __name__ == "__main__":
     parser.add_argument('-v', '--visual', action='store_true')
     
     args = parser.parse_args(['--direct', 'A:/Work/',
-                              '-a',
+                              #'-a',
+                              '--cycles','1',
                               '-v',
-                              #'-b',
-                              '--batch','16',
+                              '--batch','32',
                               '-h1','128',
-                              '--layers','2',
-                              '-lr', '1e-3', '--decay', '1e-6',
-                              '-e', '30',
-                              '--load', 'det_den3',
-                              '--name', 'det_den3'])
+                              '--layers','1',
+                              '-lr', '1e-4', '--decay', '1e-6',
+                              '-e', '80',
+                              '--load', 'arw',
+                              '--name', 'arw'])
 
     if torch.cuda.is_available():
         print('CUDA available')
@@ -198,9 +198,14 @@ if __name__ == "__main__":
     test_loader = DataLoader(test_dataset, batch_size=1, shuffle=True, collate_fn=collate_fn)
         
     # Optimizer and Criterion
-    optimizer = optim.Adam(list(encoder.parameters()) + 
-                           list(decoder.parameters()) + 
-                           list(densifier.parameters()), lr=args.lr, weight_decay=args.decay)
+    if args.autoencode:
+        optimizer = optim.Adam(list(encoder.parameters()) + 
+                               list(decoder.parameters()) + 
+                               list(densifier.parameters()), lr=args.lr, weight_decay=args.decay)
+    else:
+        optimizer = optim.Adam(list(encoder.parameters()) + 
+                               list(densifier.parameters()), lr=args.lr, weight_decay=args.decay)
+        
     criterion = nn.MSELoss()
     train_loss_hist = []
     if args.load != '':
@@ -208,7 +213,8 @@ if __name__ == "__main__":
             args.load += '.pth'
         checkpoint = torch.load(args.direct+'Models/'+args.load)
         encoder.load_state_dict(checkpoint['encoder_state_dict'])
-        decoder.load_state_dict(checkpoint['decoder_state_dict'])
+        if args.autoencode:
+            decoder.load_state_dict(checkpoint['decoder_state_dict'])
         densifier.load_state_dict(checkpoint['densifier_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         start_epoch = checkpoint['epoch']
@@ -220,7 +226,8 @@ if __name__ == "__main__":
     for epoch in range(start_epoch, args.epochs):
         start = time.time()
         train_loss, encoder, decoder, densifier = train(
-            encoder, decoder, densifier, train_loader, optimizer, criterion,args.autoencode, device)
+            encoder, decoder, densifier, train_loader, optimizer, criterion,
+            args.autoencode, args.cycles, device)
         train_time = time.time() - start 
         train_losses.append(train_loss)
         print(f'Epoch [{epoch+1:4d}/{args.epochs:4d}], '

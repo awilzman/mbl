@@ -121,13 +121,14 @@ class AbaqusInpParser:
                 row.extend(self.nodes.get(node_id, [0, 0, 0]))  # Fill missing nodes with zeros if not found
             elset_name = None
             # Find the elset to which the element belongs
-            for es_name, es_elements in self.elsets_to_elements.items():
-                if elem_id in es_elements:
-                    elset_name = es_name.split(',')[0]
-                    break
-            material_name = self.elsets_to_materials.get(elset_name, None)
-            material_props = self.materials.get(material_name, {}).get('elastic', 0)  # First elastic property (e11)
-            row.append(material_props)
+            if len(self.elsets_to_elements.items()) > 0:
+                for es_name, es_elements in self.elsets_to_elements.items():
+                    if elem_id in es_elements:
+                        elset_name = es_name.split(',')[0]
+                        break
+                material_name = self.elsets_to_materials.get(elset_name, None)
+                material_props = self.materials.get(material_name, {}).get('elastic', 0)  # First elastic property (e11)
+                row.append(material_props)
             data.append(row)
         return np.array(data)
 
