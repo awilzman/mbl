@@ -63,7 +63,7 @@ def collate_fn(batch):
     return features_padded, labels_padded
 
 def train(encoder, decoder, densifier, dataloader, optimizer, criterion, 
-          decode, cycles, device):
+          decode, cycles, loss_mag, device):
     encoder.train()
     densifier.train()
     total_loss = 0.0
@@ -85,7 +85,7 @@ def train(encoder, decoder, densifier, dataloader, optimizer, criterion,
         
         densified_output = densifier(decoded_features, encoded_features)
         
-        loss = criterion(densified_output.squeeze(-1), labels)
+        loss = loss_mag*criterion(densified_output.squeeze(-1), labels)
             
         optimizer.zero_grad()
         loss.backward()
@@ -142,6 +142,7 @@ if __name__ == "__main__":
     parser.add_argument('--layers', type=int, default=1)
     parser.add_argument('-b', '--bidir', action='store_true')
     parser.add_argument('-lr', type=float, default=1e-3)
+    parser.add_argument('--loss_mag', type=float, default=1.0)
     parser.add_argument('--decay', type=float, default=1e-6)
     parser.add_argument('--batch', type=int, default=32)
     parser.add_argument('--cycles', type=int, default=1)
@@ -156,13 +157,15 @@ if __name__ == "__main__":
                               #'-a',
                               '--cycles','1',
                               '-v',
-                              '--batch','32',
-                              '-h1','128',
-                              '--layers','1',
-                              '-lr', '1e-4', '--decay', '1e-6',
-                              '-e', '80',
-                              '--load', 'arw',
-                              '--name', 'arw'])
+                              '--batch','64',
+                              '-h1','8',
+                              '--layers','4',
+                              '-lr', '1e-2', '--decay', '1e-6',
+                              '-e', '20',
+                              '--pint','1',
+                              '--loss_mag','1',
+                              '--load', 'lstm4',
+                              '--name', 'lstm4'])
 
     if torch.cuda.is_available():
         print('CUDA available')
@@ -227,11 +230,12 @@ if __name__ == "__main__":
         start = time.time()
         train_loss, encoder, decoder, densifier = train(
             encoder, decoder, densifier, train_loader, optimizer, criterion,
-            args.autoencode, args.cycles, device)
+            args.autoencode, args.cycles, args.loss_mag, device)
         train_time = time.time() - start 
         train_losses.append(train_loss)
-        print(f'Epoch [{epoch+1:4d}/{args.epochs:4d}], '
-              f'Train Time: {train_time:7.2f} s, Train Loss: {train_loss:8.3e}')
+        if epoch % args.pint == 0:
+            print(f'Epoch [{epoch+1:4d}/{args.epochs:4d}], '
+                  f'Train Time: {train_time:7.2f} s, Train Loss: {train_loss:8.3e}')
     
     criterion = nn.L1Loss()
     test_loss = evaluate(encoder, decoder, densifier, test_loader, criterion, device)
