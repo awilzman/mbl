@@ -3,7 +3,7 @@
 Created on Wed Sep 18 15:46:23 2024
 
 @author: Andrew
-v2.0
+v3.0
 """
 import torch
 import torch.nn as nn
@@ -79,13 +79,16 @@ def train(encoder, decoder, densifier, dataloader, optimizer, criterion,
             for i in range(cycles):
                 encoded_features = encoder(decoded_features)
                 decoded_features = decoder(encoded_features, indices)
+            loss = loss_mag*criterion(features, decoded_features)
         else:
+            encoder.train()
+            densifier.train()
             decoded_features = features
             encoded_features = encoder(decoded_features)
         
-        densified_output = densifier(decoded_features, encoded_features)
-        
-        loss = loss_mag*criterion(densified_output.squeeze(-1), labels)
+            densified_output = densifier(decoded_features, encoded_features)
+            
+            loss = loss_mag*criterion(densified_output.squeeze(-1), labels)
             
         optimizer.zero_grad()
         loss.backward()
@@ -140,6 +143,7 @@ if __name__ == "__main__":
     parser.add_argument('-e', '--epochs', type=int, default=0)
     parser.add_argument('-h1', '--hidden1', type=int, default=8)
     parser.add_argument('--layers', type=int, default=1)
+    parser.add_argument('--experts', type=int, default=1)
     parser.add_argument('-b', '--bidir', action='store_true')
     parser.add_argument('-lr', type=float, default=1e-3)
     parser.add_argument('--loss_mag', type=float, default=1.0)
@@ -156,16 +160,17 @@ if __name__ == "__main__":
     args = parser.parse_args(['--direct', 'A:/Work/',
                               #'-a',
                               '--cycles','1',
+                              '--experts','4',
                               '-v',
                               '--batch','64',
-                              '-h1','8',
-                              '--layers','4',
+                              '-h1','16',
+                              '--layers','2',
                               '-lr', '1e-2', '--decay', '1e-6',
-                              '-e', '20',
+                              '-e', '40',
                               '--pint','1',
                               '--loss_mag','1',
-                              '--load', 'lstm4',
-                              '--name', 'lstm4'])
+                              '--load', 'lstm6',
+                              '--name', 'lstm6'])
 
     if torch.cuda.is_available():
         print('CUDA available')
@@ -189,9 +194,9 @@ if __name__ == "__main__":
     torch.manual_seed(args.seed)
     
     # Models
-    encoder = dnets.tet10_encoder(args.hidden1, args.layers, args.bidir).to(device)
+    encoder = dnets.tet10_encoder(args.hidden1, args.layers, args.experts, args.bidir).to(device)
     decoder = dnets.tet10_decoder(args.hidden1).to(device)
-    densifier = dnets.tet10_densify(args.hidden1).to(device)
+    densifier = dnets.tet10_densify(args.hidden1, args.experts).to(device)
         
     # Data Loaders
     train_dataset = MetatarsalDataset(train_dir)
@@ -201,13 +206,9 @@ if __name__ == "__main__":
     test_loader = DataLoader(test_dataset, batch_size=1, shuffle=True, collate_fn=collate_fn)
         
     # Optimizer and Criterion
-    if args.autoencode:
-        optimizer = optim.Adam(list(encoder.parameters()) + 
-                               list(decoder.parameters()) + 
-                               list(densifier.parameters()), lr=args.lr, weight_decay=args.decay)
-    else:
-        optimizer = optim.Adam(list(encoder.parameters()) + 
-                               list(densifier.parameters()), lr=args.lr, weight_decay=args.decay)
+    optimizer = optim.Adam(list(encoder.parameters()) + 
+                           list(decoder.parameters()) + 
+                           list(densifier.parameters()), lr=args.lr, weight_decay=args.decay)
         
     criterion = nn.MSELoss()
     train_loss_hist = []

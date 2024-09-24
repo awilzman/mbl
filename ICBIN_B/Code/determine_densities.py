@@ -12,14 +12,16 @@ if __name__ == "__main__":
     parser.add_argument('-l','--load', type=str, default='')
     parser.add_argument('--hidden1', type=int, required=True)
     parser.add_argument('--layers', type=int, required=True)
+    parser.add_argument('--experts', type=int, default=1)
     parser.add_argument('-b','--bidir', action='store_true')
     parser.add_argument('--savevtk', action='store_true')
     parser.add_argument('-v','--visualize', action='store_true')
 
     args = parser.parse_args(['-d', 'A:/Work/','-v',
-                              '-l','lstm4',
-                              '--hidden1', '8',
-                              '--layers', '4'
+                              '-l','lstm6',
+                              '--hidden1', '64',
+                              '--layers', '2',
+                              '--experts','4',
                               ])
     
     if torch.cuda.is_available():
@@ -38,10 +40,10 @@ if __name__ == "__main__":
     fab_data = os.path.join(args.direct, 'Data/inps/Fabricated/')
     inp_files = [f for f in os.listdir(fab_data) if f.endswith('.inp')]
     
-    #initialize network
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    encoder = dnets.tet10_encoder(args.hidden1, args.layers, args.bidir).to(device)
-    densifier = dnets.tet10_densify(args.hidden1).to(device)
+    encoder = dnets.tet10_encoder(args.hidden1, args.layers, args.experts, args.bidir).to(device)
+    decoder = dnets.tet10_decoder(args.hidden1).to(device)
+    densifier = dnets.tet10_densify(args.hidden1, args.experts).to(device)
     
     checkpoint = torch.load(os.path.join(args.direct, 'Models', args.load))
     encoder.load_state_dict(checkpoint['encoder_state_dict'])
