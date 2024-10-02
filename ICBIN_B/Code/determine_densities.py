@@ -18,10 +18,10 @@ if __name__ == "__main__":
     parser.add_argument('-v','--visualize', action='store_true')
 
     args = parser.parse_args(['-d', 'A:/Work/','-v',
-                              '-l','lstm6',
-                              '--hidden1', '64',
-                              '--layers', '2',
-                              '--experts','4',
+                              '-l','lstm1',
+                              '--hidden1', '8',
+                              '--layers', '4',
+                              '--experts','8',
                               ])
     
     if torch.cuda.is_available():

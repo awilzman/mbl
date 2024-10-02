@@ -79,7 +79,7 @@ def train(encoder, decoder, densifier, dataloader, optimizer, criterion,
             for i in range(cycles):
                 encoded_features = encoder(decoded_features)
                 decoded_features = decoder(encoded_features, indices)
-            loss = loss_mag*criterion(features, decoded_features)
+            loss = criterion(features, decoded_features)**loss_mag
         else:
             encoder.train()
             densifier.train()
@@ -168,9 +168,9 @@ if __name__ == "__main__":
                               '-lr', '1e-2', '--decay', '1e-6',
                               '-e', '40',
                               '--pint','1',
-                              '--loss_mag','1',
-                              '--load', 'lstm6',
-                              '--name', 'lstm6'])
+                              '--loss_mag','2',
+                              #'--load', 'lstm',
+                              '--name', 'lstm'])
 
     if torch.cuda.is_available():
         print('CUDA available')
