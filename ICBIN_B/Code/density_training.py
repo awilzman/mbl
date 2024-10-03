@@ -79,16 +79,16 @@ def train(encoder, decoder, densifier, dataloader, optimizer, criterion,
             for i in range(cycles):
                 encoded_features = encoder(decoded_features)
                 decoded_features = decoder(encoded_features, indices)
-            loss = criterion(features, decoded_features)**loss_mag
+            loss = criterion(features, decoded_features)
         else:
             encoder.train()
             densifier.train()
             decoded_features = features
             encoded_features = encoder(decoded_features)
         
-            densified_output = densifier(decoded_features, encoded_features)
+        densified_output = densifier(decoded_features, encoded_features)
             
-            loss = loss_mag*criterion(densified_output.squeeze(-1), labels)
+        loss += criterion(densified_output.squeeze(-1), labels)*loss_mag
             
         optimizer.zero_grad()
         loss.backward()
@@ -158,18 +158,18 @@ if __name__ == "__main__":
     parser.add_argument('-v', '--visual', action='store_true')
     
     args = parser.parse_args(['--direct', 'A:/Work/',
-                              #'-a',
+                              '-a',
                               '--cycles','1',
                               '--experts','4',
                               '-v',
                               '--batch','64',
                               '-h1','16',
                               '--layers','2',
-                              '-lr', '1e-2', '--decay', '1e-6',
-                              '-e', '40',
+                              '-lr', '1e-3', '--decay', '1e-6',
+                              '-e', '30',
                               '--pint','1',
-                              '--loss_mag','2',
-                              #'--load', 'lstm',
+                              '--loss_mag','1e8',
+                              '--load', 'lstm',
                               '--name', 'lstm'])
 
     if torch.cuda.is_available():

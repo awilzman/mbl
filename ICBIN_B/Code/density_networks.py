@@ -81,8 +81,9 @@ class tet10_densify(nn.Module):
         super(tet10_densify, self).__init__()
         self.codeword_size = codeword_size
         self.feature_size = 30
+        
         self.num_exp = num_exp
-        # Define the network layers
+        
         self.experts_fc1 = nn.ModuleList([nn.Linear(
             self.feature_size + self.codeword_size, codeword_size) for _ in range(self.num_exp)])
         self.gating_network = nn.Linear(self.feature_size + self.codeword_size, self.num_exp)
