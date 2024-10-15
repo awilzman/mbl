@@ -24,6 +24,7 @@ class AbaqusInpParser:
     def read_inp(self):
         with open(self.input_file, 'r') as inp_file:
             return [line.strip() for line in inp_file]
+        
 
     def extract_nodes_elements(self, inp_data):
         """
@@ -86,7 +87,23 @@ class AbaqusInpParser:
                 elset_name = self.extract_elset_name(line)
                 material_name = self.extract_material_name(line)
                 self.elsets_to_materials[elset_name] = material_name
+                
+    def extract_surface_elements(self, inp_data):
+        """
+        Third pass: Extracts surface elements, marking the elements on the surface.
+        """
+        surface_section = False
 
+        for line in inp_data:
+            if line.startswith('*SURFACE'):
+                surface_section = True
+            elif surface_section and not line.startswith('*'):
+                parts = line.split(',')
+                elem_id = int(parts[0])  # Extract element ID
+                self.surface_elements.add(elem_id)  # Mark as surface element
+            elif line.startswith('*'):
+                surface_section = False  # End of surface section
+                
     def extract_elset_name(self, line):
         """
         Extracts elset name from *SOLID SECTION line.
@@ -112,32 +129,31 @@ class AbaqusInpParser:
     def create_element_data(self):
         """
         Creates a 2D array where each row corresponds to an element.
-        Each row contains the x, y, z coordinates of the element's nodes and the material's first property (e11).
+        Each row contains the x, y, z coordinates of the element's nodes, 
+        a binary feature denoting surface or not, and the material's first property (e11).
         """
         data = []
         for elem_id, node_ids in self.elements.items():
             row = []
             for node_id in node_ids:
                 row.extend(self.nodes.get(node_id, [0, 0, 0]))  # Fill missing nodes with zeros if not found
-            elset_name = None
+    
+            # Determine if element is a surface element
+            is_surface = 1 if elem_id in self.surface_elements else 0
+            row.append(is_surface)  # Append binary surface feature
+    
             # Find the elset to which the element belongs
+            elset_name = None
             if len(self.elsets_to_elements.items()) > 0:
                 for es_name, es_elements in self.elsets_to_elements.items():
                     if elem_id in es_elements:
                         elset_name = es_name.split(',')[0]
                         break
-                material_name = self.elsets_to_materials.get(elset_name, None)
-                material_props = self.materials.get(material_name, {}).get('elastic', 0)  # First elastic property (e11)
-                row.append(material_props)
+            material_name = self.elsets_to_materials.get(elset_name, None)
+            material_props = self.materials.get(material_name, {}).get('elastic', 0)  # First elastic property (e11)
+            row.append(material_props)  # Append elastic property
             data.append(row)
         return np.array(data)
-
-    def process_inp_file(self):
-        inp_data = self.read_inp()
-        self.extract_nodes_elements(inp_data)  # First pass to gather nodes, elements, and elsets
-        self.extract_materials(inp_data)  # Second pass to gather material definitions
-        element_data = self.create_element_data()  # Finally create the element data array
-        return element_data
     
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='ABAQUS model generator')
