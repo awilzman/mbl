@@ -20,6 +20,7 @@ class AbaqusInpParser:
         self.element_material_map = {}  # Maps element IDs to materials
         self.elsets_to_elements = {}  # Maps elsets to element IDs
         self.elsets_to_materials = {}  # Maps elsets to material names
+        self.surface_elements = set() # Surface element marker
 
     def read_inp(self):
         with open(self.input_file, 'r') as inp_file:
@@ -154,6 +155,14 @@ class AbaqusInpParser:
             row.append(material_props)  # Append elastic property
             data.append(row)
         return np.array(data)
+    
+    def process_inp_file(self):
+        inp_data = self.read_inp()
+        self.extract_nodes_elements(inp_data)  # First pass to gather nodes, elements, and elsets
+        self.extract_materials(inp_data)  # Second pass to gather material definitions
+        self.extract_surface_elements(inp_data)  # Third pass to gather surface elements
+        element_data = self.create_element_data()  # Finally create the element data array
+        return element_data
     
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='ABAQUS model generator')
