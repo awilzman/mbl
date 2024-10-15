@@ -11,7 +11,6 @@ import h5py
 import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
 from torch.nn.utils.rnn import pad_sequence
-import matplotlib.pyplot as plt
 import argparse
 import time
 import pandas as pd
@@ -42,10 +41,14 @@ class MetatarsalDataset(Dataset):
         return len(self.data)
 
     def __getitem__(self, idx):
-        features, labels, length = self.data[idx], self.labels[idx], self.lengths[idx]
-        perm = torch.randperm(length)
-        return features[perm], labels[perm]
+        features, labels, _ = self.data[idx], self.labels[idx], self.lengths[idx]
 
+        # Sort based on the first three features
+        sorted_indices = torch.argsort(features[:, 2])
+        sorted_indices = sorted_indices[torch.argsort(features[sorted_indices, 1])]
+        sorted_indices = sorted_indices[torch.argsort(features[sorted_indices, 0])]
+        
+        return features[sorted_indices], labels[sorted_indices]
     
 def collate_fn(batch):
     features, labels = zip(*batch)
@@ -81,14 +84,18 @@ def train(encoder, decoder, densifier, dataloader, optimizer, criterion,
                 decoded_features = decoder(encoded_features, indices)
             loss = criterion(features, decoded_features)
         else:
+            loss = 0
             encoder.train()
             densifier.train()
             decoded_features = features
             encoded_features = encoder(decoded_features)
         
         densified_output = densifier(decoded_features, encoded_features)
-            
-        loss += criterion(densified_output.squeeze(-1), labels)*loss_mag
+        
+        #Variational Autoencoder to latent -> N(0,1)
+        kl_loss = 0.5 * torch.sum(encoded_features.pow(2), dim=-1)
+        
+        loss += (masked_mse(densified_output.squeeze(-1), labels) + kl_loss.mean())*loss_mag
             
         optimizer.zero_grad()
         loss.backward()
@@ -116,6 +123,9 @@ def evaluate(encoder, decoder, densifier, dataloader, criterion, device):
     return total_loss / len(dataloader)
 
 def plot_loss(title, train_losses, old_losses=None):
+    
+    import matplotlib.pyplot as plt
+    
     plt.figure(figsize=(10, 6))
     
     if old_losses is not None:
@@ -136,6 +146,22 @@ def plot_loss(title, train_losses, old_losses=None):
     plt.grid(True)
     plt.show()
     
+def masked_mse(predictions, targets):
+    # Remove zeros from MSE measurement
+    # Then penalize number of zero predictions
+    non_zero_indices = targets != 0
+    filtered_predictions = predictions[non_zero_indices]
+    filtered_targets = targets[non_zero_indices]
+    mse_loss = torch.mean((filtered_predictions - filtered_targets) ** 2)
+    
+    zero_count = torch.sum(filtered_predictions == 0)
+    
+    scaling_factor = torch.where(zero_count > 100, 4.0,
+                       torch.where(zero_count > 50, 2.0,
+                       torch.where(zero_count > 0, 1.5, 1.0)))
+    
+    return mse_loss * scaling_factor
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--direct', type=str, default='')
@@ -147,30 +173,33 @@ if __name__ == "__main__":
     parser.add_argument('-b', '--bidir', action='store_true')
     parser.add_argument('-lr', type=float, default=1e-3)
     parser.add_argument('--loss_mag', type=float, default=1.0)
-    parser.add_argument('--decay', type=float, default=1e-6)
+    parser.add_argument('--decay', type=float, default=1e-4)
     parser.add_argument('--batch', type=int, default=32)
     parser.add_argument('--cycles', type=int, default=1)
     parser.add_argument('--pint', type=int, default=1)
     parser.add_argument('--name', type=str, default='')
     parser.add_argument('--load', type=str, default='')
+    parser.add_argument('--optim', type=str, default='Adam')
     parser.add_argument('-a', '--autoencode', action='store_true')
     parser.add_argument('-vae', action='store_true')
     parser.add_argument('-v', '--visual', action='store_true')
     
     args = parser.parse_args(['--direct', 'A:/Work/',
-                              '-a',
+                              #'-a',
                               '--cycles','1',
-                              '--experts','4',
                               '-v',
                               '--batch','64',
-                              '-h1','16',
+                              '-h1','32',
                               '--layers','2',
-                              '-lr', '1e-3', '--decay', '1e-6',
+                              '--experts','4',
+                              #'-b',
+                              '-lr', '1e-3', '--decay', '1e-4',
                               '-e', '30',
                               '--pint','1',
-                              '--loss_mag','1e8',
-                              '--load', 'lstm',
-                              '--name', 'lstm'])
+                              '--loss_mag','1',
+                              '--optim','rms',
+                              #'--load', 'lstm_rms',
+                              '--name', 'lstm_rms'])
 
     if torch.cuda.is_available():
         print('CUDA available')
@@ -206,9 +235,22 @@ if __name__ == "__main__":
     test_loader = DataLoader(test_dataset, batch_size=1, shuffle=True, collate_fn=collate_fn)
         
     # Optimizer and Criterion
-    optimizer = optim.Adam(list(encoder.parameters()) + 
-                           list(decoder.parameters()) + 
-                           list(densifier.parameters()), lr=args.lr, weight_decay=args.decay)
+    param_groups = list(encoder.parameters()) + list(decoder.parameters()) + list(densifier.parameters())
+    
+    optimizer_dict = {
+        'adam': lambda: optim.Adam(param_groups, lr=args.lr, weight_decay=args.decay),
+        'rms': lambda: optim.RMSprop(param_groups, lr=args.lr, alpha=0.95, eps=1e-8, weight_decay=args.decay),
+        'sgd': lambda: optim.SGD(param_groups, lr=args.lr, momentum=0.9, weight_decay=args.decay),
+        'adamw': lambda: optim.AdamW(param_groups, lr=args.lr, weight_decay=args.decay),
+        'adagrad': lambda: optim.Adagrad(param_groups, lr=args.lr, lr_decay=0, weight_decay=args.decay)
+    }
+    
+    optimizer_name = args.optim.lower()
+    
+    if optimizer_name in optimizer_dict:
+        optimizer = optimizer_dict[optimizer_name]()
+    else:
+        raise ValueError(f"Unsupported optimizer '{optimizer_name}'. Choose from {list(optimizer_dict.keys())}.")
         
     criterion = nn.MSELoss()
     train_loss_hist = []
@@ -259,7 +301,7 @@ if __name__ == "__main__":
     metrics = pd.DataFrame(state['train_losses'])
     metrics.to_csv(path)   
     
-    print('Saved.')
+    print(f'Saved {args.name}.')
     
     if args.visual:
         if args.load != '':

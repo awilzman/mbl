@@ -12,6 +12,7 @@ import torch.nn.functional as F
 class tet10_encoder(nn.Module):
     def __init__(self, hidden_size=16, num_layers=1, num_exp=1, bidirectional=False):
         super(tet10_encoder, self).__init__()
+        self.act = nn.LeakyReLU()
         self.lstm = nn.LSTM(
             input_size=30,
             hidden_size=hidden_size,
@@ -47,7 +48,7 @@ class tet10_encoder(nn.Module):
         expert_outputs = torch.stack(expert_outputs, dim=1)
         encoded = torch.einsum('bi,bij->bj', gate_values, expert_outputs)
         
-        encoded = self.fc2(torch.relu(encoded))
+        encoded = self.fc2(self.act(encoded))
 
         return encoded
     

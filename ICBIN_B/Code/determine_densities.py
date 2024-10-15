@@ -18,10 +18,10 @@ if __name__ == "__main__":
     parser.add_argument('-v','--visualize', action='store_true')
 
     args = parser.parse_args(['-d', 'A:/Work/','-v',
-                              '-l','lstm',
+                              '-l','lstm_rms',
                               '--hidden1', '16',
-                              '--layers', '2',
-                              '--experts','4',
+                              '--layers', '1',
+                              '--experts','4'
                               ])
     
     if torch.cuda.is_available():
@@ -67,8 +67,13 @@ if __name__ == "__main__":
         inp_parser.extract_nodes_elements(inp_data)
         element_data = inp_parser.create_element_data()
         
-        #guess densities
-        X = torch.FloatTensor(element_data[:,:-1]).unsqueeze(0).to(device)
+        #guess densities, inp_parser has 0s in place of density if not read
+        X = torch.FloatTensor(element_data[:,:-1])
+        sorted_indices = torch.argsort(X[:, 2])
+        sorted_indices = sorted_indices[torch.argsort(X[sorted_indices, 1])]
+        sorted_indices = sorted_indices[torch.argsort(X[sorted_indices, 0])]
+        X = X[sorted_indices].unsqueeze(0).to(device)
+        
         with torch.no_grad():
             encoded = encoder(X)
             d_out = densifier(X, encoded)
