@@ -75,19 +75,19 @@ def train(encoder, decoder, densifier, dataloader, optimizer, criterion,
         features, labels = features.to(device), labels.to(device)
         
         indices = features[:,:,-1]
+        decoded_features = features.clone()
         
         if(decode):
             decoder.train()
-            decoded_features = features.clone()
             for i in range(cycles):
                 encoded_features = encoder(decoded_features)
                 decoded_features = decoder(encoded_features, indices)
+                
             loss = criterion(features, decoded_features)
         else:
             loss = 0
             encoder.train()
             densifier.train()
-            decoded_features = features
             encoded_features = encoder(decoded_features)
         
         densified_output = densifier(decoded_features, encoded_features)
@@ -189,16 +189,16 @@ if __name__ == "__main__":
                               '--cycles','1',
                               '-v',
                               '--batch','64',
-                              '-h1','32',
+                              '-h1','16',
                               '--layers','2',
                               '--experts','2',
                               #'-b',
-                              '-lr', '3e-3', '--decay', '1e-4',
-                              '-e', '10',
+                              '-lr', '2e-3', '--decay', '1e-4',
+                              '-e', '20',
                               '--pint','1',
                               '--loss_mag','1e6',
                               '--optim','adam',
-                              #'--load', 'lstm_adam',
+                              '--load', 'lstm_adam',
                               '--name', 'lstm_adam'])
 
     if torch.cuda.is_available():
@@ -254,15 +254,36 @@ if __name__ == "__main__":
         
     criterion = nn.MSELoss()
     train_loss_hist = []
+    new_flag = False
     if args.load != '':
         if args.load[-4:] != '.pth': # must be .pth
             args.load += '.pth'
         checkpoint = torch.load(args.direct+'Models/'+args.load)
-        encoder.load_state_dict(checkpoint['encoder_state_dict'])
+        try:
+            encoder.load_state_dict(checkpoint['encoder_state_dict'])
+            print(f'Successfully loaded {args.load} encoder')
+        except:
+            print(f'Something went wrong loading {args.load} encoder, starting new!')
+            new_flag = True
+            
         if args.autoencode:
-            decoder.load_state_dict(checkpoint['decoder_state_dict'])
-        densifier.load_state_dict(checkpoint['densifier_state_dict'])
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            try:
+                decoder.load_state_dict(checkpoint['decoder_state_dict'])
+                print(f'Successfully loaded {args.load} decoder')
+            except:
+                print(f'Something went wrong loading {args.load} decoder, starting new!')
+                new_flag = True
+        
+        try:
+            densifier.load_state_dict(checkpoint['densifier_state_dict'])
+            print(f'Successfully loaded {args.load} densifier')
+        except:
+            print(f'Something went wrong loading {args.load} densifier, starting new!')
+            new_flag = True
+        
+        if not new_flag:
+            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        
         start_epoch = checkpoint['epoch']
         train_loss_hist = checkpoint.get('train_losses', [])
     

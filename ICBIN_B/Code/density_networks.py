@@ -48,17 +48,12 @@ class tet10_encoder(nn.Module):
             output = torch.cat((output[:, :, :self.lstm.hidden_size], 
                                 output[:, :, self.lstm.hidden_size:]), dim=2)
         
-        # Compute gate values for each time step
-        gate_values = F.softmax(self.gating_network(output), dim=2)  # Apply gating network on the output for each time step
+        gate_values = F.softmax(self.gating_network(output), dim=2)
     
-        # Compute expert outputs for each time step
-        expert_outputs = [expert(output) for expert in self.experts_fc1]  # Apply experts to the output of each time step
+        expert_outputs = [expert(output) for expert in self.experts_fc1]
         expert_outputs = torch.stack(expert_outputs, dim=2)
+        encoded = torch.einsum('bti,btij->btj', gate_values, expert_outputs)  
     
-        # Combine expert outputs using gate values
-        encoded = torch.einsum('bti,btij->btj', gate_values, expert_outputs)  # Combine expert outputs using gating values
-    
-        # Pass through the final fully connected layer (apply per time step)
         encoded = self.fc2(self.act(encoded))
     
         return encoded
@@ -67,7 +62,7 @@ class tet10_decoder(nn.Module):
     def __init__(self, codeword_size=16):
         super(tet10_decoder, self).__init__()
         self.codeword_size = codeword_size
-        self.feature_size = 31
+        self.feature_size = 30
         self.act = nn.LeakyReLU()
         self.fc1 = nn.Linear(self.codeword_size + 1, 64)
         self.fc2 = nn.Linear(65, 32)
@@ -83,7 +78,7 @@ class tet10_decoder(nn.Module):
         x = self.act(self.fc2(x))
         x = torch.cat((x, i), dim=2)
         x = self.fc3(x)
-        
+        x = torch.cat((x, i), dim=2)
         return x
     
 class tet10_densify(nn.Module):
@@ -103,11 +98,11 @@ class tet10_densify(nn.Module):
         
     
     def forward(self, elems, encoded_features):
-        # x shape: (B, E, 30) - Original features
-        # encoded_features shape: (B, 1, 16) - Encoded features
+        # x shape: (B, E, 31) - Original features
+        # encoded_features shape: (B, E, 16) - Encoded features
         B, E, _ = elems.size()
         
-        x = torch.cat((elems, encoded_features), dim=2)  # (B, E, 31 + 16)
+        x = torch.cat((elems, encoded_features), dim=2)  # (B, E, 31 + codeword)
         xs = elems[:,:,-1]
         gate_values = F.softmax(self.gating_network(x.view(-1, x.size(-1))), dim=1)  # Shape: [B*E, num_experts]
         gate_values = gate_values.view(B, E, self.num_exp)
