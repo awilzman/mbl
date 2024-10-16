@@ -186,15 +186,15 @@ if __name__ == "__main__":
     
     args = parser.parse_args(['--direct', 'A:/Work/',
                               '-a',
-                              '--cycles','1',
+                              '--cycles','2',
                               '-v',
                               '--batch','64',
-                              '-h1','16',
-                              '--layers','2',
-                              '--experts','2',
+                              '-h1','8',
+                              '--layers','1',
+                              '--experts','1',
                               #'-b',
-                              '-lr', '2e-3', '--decay', '1e-4',
-                              '-e', '20',
+                              '-lr', '1e-3', '--decay', '1e-5',
+                              '-e', '40',
                               '--pint','1',
                               '--loss_mag','1e6',
                               '--optim','adam',
@@ -265,14 +265,12 @@ if __name__ == "__main__":
         except:
             print(f'Something went wrong loading {args.load} encoder, starting new!')
             new_flag = True
-            
-        if args.autoencode:
-            try:
-                decoder.load_state_dict(checkpoint['decoder_state_dict'])
-                print(f'Successfully loaded {args.load} decoder')
-            except:
-                print(f'Something went wrong loading {args.load} decoder, starting new!')
-                new_flag = True
+        try:
+            decoder.load_state_dict(checkpoint['decoder_state_dict'])
+            print(f'Successfully loaded {args.load} decoder')
+        except:
+            print(f'Something went wrong loading {args.load} decoder, starting new!')
+            new_flag = True
         
         try:
             densifier.load_state_dict(checkpoint['densifier_state_dict'])
@@ -322,7 +320,7 @@ if __name__ == "__main__":
     metrics = pd.DataFrame(state['train_losses'])
     metrics.to_csv(path)   
     
-    print(f'Saved {args.name}.')
+    print(f'Saved {args.name}. Test MAE: {test_loss:.3e}')
     
     if args.visual:
         if args.load != '':
