@@ -19,8 +19,8 @@ if __name__ == "__main__":
 
     args = parser.parse_args(['-d', 'A:/Work/','-v',
                               '-l','lstm_adam',
-                              '--hidden1', '8',
-                              '--layers', '1',
+                              '--hidden1', '16',
+                              '--layers', '2',
                               '--experts','1'
                               ])
     

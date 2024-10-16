@@ -66,7 +66,7 @@ def collate_fn(batch):
     return features_padded, labels_padded
 
 def train(encoder, decoder, densifier, dataloader, optimizer, criterion, 
-          decode, cycles, loss_mag, device):
+          decode, cycles, loss_mag, noise, device):
     encoder.train()
     densifier.train()
     total_loss = 0.0
@@ -89,6 +89,9 @@ def train(encoder, decoder, densifier, dataloader, optimizer, criterion,
             encoder.train()
             densifier.train()
             encoded_features = encoder(decoded_features)
+        
+        decoded_features = decoded_features+torch.randn_like(decoded_features) * noise
+        encoded_features = encoded_features+torch.randn_like(encoded_features) * noise
         
         densified_output = densifier(decoded_features, encoded_features)
         
@@ -172,6 +175,7 @@ if __name__ == "__main__":
     parser.add_argument('--experts', type=int, default=1)
     parser.add_argument('-b', '--bidir', action='store_true')
     parser.add_argument('-lr', type=float, default=1e-3)
+    parser.add_argument('--noise', type=float, default=0)
     parser.add_argument('--loss_mag', type=float, default=1.0)
     parser.add_argument('--decay', type=float, default=1e-4)
     parser.add_argument('--batch', type=int, default=32)
@@ -186,15 +190,16 @@ if __name__ == "__main__":
     
     args = parser.parse_args(['--direct', 'A:/Work/',
                               '-a',
-                              '--cycles','2',
+                              '--cycles','1',
+                              '--noise','0.01',
                               '-v',
                               '--batch','64',
-                              '-h1','8',
-                              '--layers','1',
+                              '-h1','16',
+                              '--layers','2',
                               '--experts','1',
                               #'-b',
-                              '-lr', '1e-3', '--decay', '1e-5',
-                              '-e', '40',
+                              '-lr', '1e-2', '--decay', '1e-5',
+                              '-e', '20',
                               '--pint','1',
                               '--loss_mag','1e6',
                               '--optim','adam',
@@ -292,7 +297,7 @@ if __name__ == "__main__":
         start = time.time()
         train_loss, encoder, decoder, densifier = train(
             encoder, decoder, densifier, train_loader, optimizer, criterion,
-            args.autoencode, args.cycles, args.loss_mag, device)
+            args.autoencode, args.cycles, args.loss_mag, args.noise, device)
         train_time = time.time() - start 
         train_losses.append(train_loss)
         if epoch % args.pint == 0:
