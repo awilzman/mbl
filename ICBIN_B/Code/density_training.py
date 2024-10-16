@@ -34,7 +34,7 @@ class MetatarsalDataset(Dataset):
         all_labels = torch.cat(self.labels)
         self.label_scaling_factor = all_labels.max().item() if all_labels.max() > 0 else 1.0
 
-        # Normalize labels
+        # Normalize labels (0,1)
         self.labels = [label / self.label_scaling_factor for label in self.labels]
 
     def __len__(self):
@@ -74,41 +74,56 @@ def train(encoder, decoder, densifier, dataloader, optimizer, criterion,
     for features, labels in dataloader:
         features, labels = features.to(device), labels.to(device)
         
-        indices = features[:,:,-1]
-        decoded_features = features.clone()
+        indices = features[:, :, -1]
+        decoded_features = features  # Avoid unnecessary clone
+        cortical_features = features[:, :, -1]
         
-        if(decode):
+        if decode:
             decoder.train()
             for i in range(cycles):
                 encoded_features = encoder(decoded_features)
-                decoded_features = decoder(encoded_features, indices)
+                # No need to use detach here, only when not tracking gradients
+                with torch.no_grad():
+                    decoded_features = decoder(encoded_features, indices)
                 
             loss = criterion(features, decoded_features)
         else:
             loss = 0
-            encoder.train()
-            densifier.train()
             encoded_features = encoder(decoded_features)
         
-        decoded_features = decoded_features+torch.randn_like(decoded_features) * noise
-        encoded_features = encoded_features+torch.randn_like(encoded_features) * noise
-        
+        # Variational Autoencoder to latent -> N(0,1), efficient kl_loss
+        kl_loss = 0.5 * encoded_features.pow(2).sum(dim=-1).mean()
+
+        # Add noise directly, no detach needed
+        decoded_features = decoded_features + torch.randn_like(decoded_features) * noise
+        encoded_features = encoded_features + torch.randn_like(encoded_features) * noise
+
+        # Densifier step
         densified_output = densifier(decoded_features, encoded_features)
         
-        #Variational Autoencoder to latent -> N(0,1)
-        kl_loss = 0.5 * torch.sum(encoded_features.pow(2), dim=-1)
+        # Cortical densities must be higher: assume (0,1), see dataset
+        cf_idx = cortical_features == 1
+        densified_output_squeezed = densified_output.squeeze(-1)
+        low_count = torch.count_nonzero(densified_output_squeezed[cf_idx] < 0.5).item()
         
-        loss += (masked_mse(densified_output.squeeze(-1), labels) + kl_loss.mean())*loss_mag
-            
+        scaling_factor = low_count / features.shape[0]
+
+        # MSE loss with single squeeze
+        mse_loss = masked_mse(densified_output_squeezed, labels) * scaling_factor
+        
+        # Final loss calculation
+        loss += (mse_loss + loss_mag * kl_loss) * loss_mag
+
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-        
+
         total_loss += loss.item()
         
     total_loss /= len(dataloader)
     
     return total_loss, encoder, decoder, densifier
+
 
 def evaluate(encoder, decoder, densifier, dataloader, criterion, device):
     total_loss = 0.0
@@ -191,17 +206,17 @@ if __name__ == "__main__":
     args = parser.parse_args(['--direct', 'A:/Work/',
                               '-a',
                               '--cycles','1',
-                              '--noise','0.01',
+                              '--noise','0.1',
                               '-v',
                               '--batch','64',
                               '-h1','16',
                               '--layers','2',
                               '--experts','1',
                               #'-b',
-                              '-lr', '1e-2', '--decay', '1e-5',
-                              '-e', '20',
+                              '-lr', '1e-2', '--decay', '2e-5',
+                              '-e', '70',
                               '--pint','1',
-                              '--loss_mag','1e6',
+                              '--loss_mag','1e9',
                               '--optim','adam',
                               '--load', 'lstm_adam',
                               '--name', 'lstm_adam'])
