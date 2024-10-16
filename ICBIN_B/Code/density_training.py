@@ -74,7 +74,7 @@ def train(encoder, decoder, densifier, dataloader, optimizer, criterion,
     for features, labels in dataloader:
         features, labels = features.to(device), labels.to(device)
         
-        indices = torch.arange(features.size(1), device=device).unsqueeze(0).expand(features.size(0), -1)
+        indices = features[:,:,-1]
         
         if(decode):
             decoder.train()
@@ -185,21 +185,21 @@ if __name__ == "__main__":
     parser.add_argument('-v', '--visual', action='store_true')
     
     args = parser.parse_args(['--direct', 'A:/Work/',
-                              #'-a',
+                              '-a',
                               '--cycles','1',
                               '-v',
                               '--batch','64',
                               '-h1','32',
                               '--layers','2',
-                              '--experts','4',
+                              '--experts','2',
                               #'-b',
-                              '-lr', '1e-3', '--decay', '1e-4',
-                              '-e', '30',
+                              '-lr', '3e-3', '--decay', '1e-4',
+                              '-e', '10',
                               '--pint','1',
-                              '--loss_mag','1',
-                              '--optim','rms',
-                              #'--load', 'lstm_rms',
-                              '--name', 'lstm_rms'])
+                              '--loss_mag','1e6',
+                              '--optim','adam',
+                              #'--load', 'lstm_adam',
+                              '--name', 'lstm_adam'])
 
     if torch.cuda.is_available():
         print('CUDA available')

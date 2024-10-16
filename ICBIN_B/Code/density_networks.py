@@ -14,7 +14,7 @@ class tet10_encoder(nn.Module):
         super(tet10_encoder, self).__init__()
         self.act = nn.LeakyReLU()
         self.lstm = nn.LSTM(
-            input_size=30,
+            input_size=31,
             hidden_size=hidden_size,
             num_layers=num_layers,
             bidirectional=bidirectional,
@@ -31,48 +31,57 @@ class tet10_encoder(nn.Module):
         self.fc2 = nn.Linear(hidden_size,hidden_size)
         
     def forward(self, x):
-        lengths = (x != 0).sum(dim=1)[:, 0].cpu()  # Keep lengths on CPU for packing
-
-        # Pack padded sequences for variable-length inputs
+        # Calculate sequence lengths, assuming padding value is 0
+        lengths = (x != 0).sum(dim=1)[:, 0].cpu()
+    
+        # Pack padded sequences
         packed_input = nn.utils.rnn.pack_padded_sequence(x, lengths, batch_first=True, enforce_sorted=False)
         packed_output, (h_n, c_n) = self.lstm(packed_input)
-        
-        # If LSTM is bidirectional, concatenate forward and backward hidden states
+    
+        # Unpack sequences to get the hidden states for all time steps
+        output, _ = nn.utils.rnn.pad_packed_sequence(packed_output, batch_first=True)
+    
+        # Apply expert gating mechanism on the hidden states at each time step
+        # (output is of shape [batch_size, seq_len, hidden_size])
         if self.lstm.bidirectional:
-            h_n = torch.cat((h_n[-2, :, :], h_n[-1, :, :]), dim=1)
-        else:
-            h_n = h_n[-1, :, :]
-            
-        gate_values = F.softmax(self.gating_network(h_n), dim=1) 
-        expert_outputs = [expert(h_n) for expert in self.experts_fc1]
-        expert_outputs = torch.stack(expert_outputs, dim=1)
-        encoded = torch.einsum('bi,bij->bj', gate_values, expert_outputs)
+            # If bidirectional, concatenate the forward and backward hidden states at each time step
+            output = torch.cat((output[:, :, :self.lstm.hidden_size], 
+                                output[:, :, self.lstm.hidden_size:]), dim=2)
         
+        # Compute gate values for each time step
+        gate_values = F.softmax(self.gating_network(output), dim=2)  # Apply gating network on the output for each time step
+    
+        # Compute expert outputs for each time step
+        expert_outputs = [expert(output) for expert in self.experts_fc1]  # Apply experts to the output of each time step
+        expert_outputs = torch.stack(expert_outputs, dim=2)
+    
+        # Combine expert outputs using gate values
+        encoded = torch.einsum('bti,btij->btj', gate_values, expert_outputs)  # Combine expert outputs using gating values
+    
+        # Pass through the final fully connected layer (apply per time step)
         encoded = self.fc2(self.act(encoded))
-
+    
         return encoded
     
 class tet10_decoder(nn.Module):
     def __init__(self, codeword_size=16):
         super(tet10_decoder, self).__init__()
         self.codeword_size = codeword_size
-        self.feature_size = 30
+        self.feature_size = 31
         self.act = nn.LeakyReLU()
         self.fc1 = nn.Linear(self.codeword_size + 1, 64)
-        self.fc2 = nn.Linear(64, 32)
-        self.fc3 = nn.Linear(32, self.feature_size)
+        self.fc2 = nn.Linear(65, 32)
+        self.fc3 = nn.Linear(33, self.feature_size)
         
         
     def forward(self, x, i):
-        x = x.unsqueeze(1)  # Shape: [B, 1, D]
-        i = i.unsqueeze(-1)  # Shape: [B, E, 1]
-        
-        x = x.expand(-1, i.size(1), -1)  # Shape: [B, E, D]
-        
-        x = torch.cat((x, i), dim=-1)  # Shape: [B, E, D + 1]
+        i = i.unsqueeze(2)
+        x = torch.cat((x, i), dim=2)  # Shape: [B, E, D + 1]
         
         x = self.act(self.fc1(x))
+        x = torch.cat((x, i), dim=2)
         x = self.act(self.fc2(x))
+        x = torch.cat((x, i), dim=2)
         x = self.fc3(x)
         
         return x
@@ -81,7 +90,7 @@ class tet10_densify(nn.Module):
     def __init__(self, codeword_size=16, num_exp=1):
         super(tet10_densify, self).__init__()
         self.codeword_size = codeword_size
-        self.feature_size = 30
+        self.feature_size = 31
         
         self.num_exp = num_exp
         
@@ -89,8 +98,8 @@ class tet10_densify(nn.Module):
             self.feature_size + self.codeword_size, codeword_size) for _ in range(self.num_exp)])
         self.gating_network = nn.Linear(self.feature_size + self.codeword_size, self.num_exp)
         
-        self.fc2 = nn.Linear(self.codeword_size, self.codeword_size//2)
-        self.fc3 = nn.Linear(self.codeword_size//2, 1)
+        self.fc2 = nn.Linear(1+self.codeword_size, self.codeword_size//2)
+        self.fc3 = nn.Linear(1+self.codeword_size//2, 1)
         
     
     def forward(self, elems, encoded_features):
@@ -98,18 +107,18 @@ class tet10_densify(nn.Module):
         # encoded_features shape: (B, 1, 16) - Encoded features
         B, E, _ = elems.size()
         
-        encoded_features_repeated = encoded_features.unsqueeze(1).repeat(1, elems.size(1), 1)  # (B, E, 16)
-        combined = torch.cat((elems, encoded_features_repeated), dim=2)  # (B, E, 30 + 16)
-        
-        gate_values = F.softmax(self.gating_network(combined.view(-1, combined.size(-1))), dim=1)  # Shape: [B*E, num_experts]
+        x = torch.cat((elems, encoded_features), dim=2)  # (B, E, 31 + 16)
+        xs = elems[:,:,-1]
+        gate_values = F.softmax(self.gating_network(x.view(-1, x.size(-1))), dim=1)  # Shape: [B*E, num_experts]
         gate_values = gate_values.view(B, E, self.num_exp)
         
-        expert_outputs = [expert(combined) for expert in self.experts_fc1]
+        expert_outputs = [expert(x) for expert in self.experts_fc1]
         expert_outputs = torch.stack(expert_outputs, dim=2)  # Shape: [B, E, num_experts, codeword_size]
 
         # Weighted sum of expert outputs
-        x = torch.einsum('bij,bijk->bik', gate_values, expert_outputs) 
-        
+        x = torch.einsum('bij,bijk->bik', gate_values, expert_outputs) # [B, E, codword size]
+        x = torch.cat([x,xs.unsqueeze(2)],dim=2)
         x = torch.relu(self.fc2(x))
+        x = torch.cat([x,xs.unsqueeze(2)],dim=2)
         x = torch.relu(self.fc3(x))
         return x
