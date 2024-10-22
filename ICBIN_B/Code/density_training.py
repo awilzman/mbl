@@ -65,8 +65,14 @@ def collate_fn(batch):
     
     return features_padded, labels_padded
 
-def train(encoder, densifier, dataloader, optimizer, criterion, 
-          cycles, noise, device):
+def NLL_loss(mean, variance, targets):
+    # Clamp variance to avoid division by zero or negative variance
+    variance = torch.clamp(variance, min=1e-6)
+    
+    nll = 0.5 * ((targets - mean) ** 2 / variance + torch.log(variance))
+    return nll.mean()
+
+def train(encoder, densifier, dataloader, optimizer, criterion, noise, device):
     encoder.train()
     densifier.train()
     total_loss = 0.0
@@ -79,23 +85,22 @@ def train(encoder, densifier, dataloader, optimizer, criterion,
         encoded_features = encoded_features + torch.randn_like(encoded_features) * noise
 
         # Densifier step
-        densified_output = densifier(features, encoded_features)
+        mn, var = densifier(features, encoded_features)
         
         # Cortical densities must be higher: assume (0,1), see dataset
         cf_idx = cortical_features == 1
-        densified_output_squeezed = densified_output.squeeze(-1)
+        densified_output_squeezed = mn.squeeze(-1)
         low_count = (densified_output_squeezed[cf_idx] <= 0.5).sum().item()
         
-        low_count = low_count / features.shape[0]
-
-        # MSE loss with single squeeze
-        mse_loss = masked_mse(densified_output_squeezed, labels)
+        low_count = 1+(low_count / features.shape[0])
+        
+        NLLloss = NLL_loss(mn.squeeze(-1), var.squeeze(-1), labels)
         
         # Variational Autoencoder to latent -> N(0,1), efficient kl_loss
         kl_loss = 0.5 * encoded_features.pow(2).sum(dim=-1).mean()
             
         # Final loss calculation
-        loss = low_count*(mse_loss + kl_loss*1e4)
+        loss = (low_count/5e3) + (NLLloss/2e5) + kl_loss
 
         optimizer.zero_grad()
         loss.backward()
@@ -116,7 +121,7 @@ def evaluate(encoder, densifier, dataloader, criterion, device):
             features, labels = features.to(device), labels.to(device)
             
             encoded_features = encoder(features)
-            densified_output = densifier(features, encoded_features)
+            densified_output, _ = densifier(features, encoded_features)
             
             loss = criterion(densified_output.squeeze(-1), labels)
             total_loss += loss.item()
@@ -175,7 +180,6 @@ if __name__ == "__main__":
     parser.add_argument('--noise', type=float, default=0)
     parser.add_argument('--decay', type=float, default=1e-4)
     parser.add_argument('--batch', type=int, default=32)
-    parser.add_argument('--cycles', type=int, default=1)
     parser.add_argument('--pint', type=int, default=1)
     parser.add_argument('--name', type=str, default='')
     parser.add_argument('--load', type=str, default='')
@@ -183,13 +187,12 @@ if __name__ == "__main__":
     parser.add_argument('-v', '--visual', action='store_true')
     
     args = parser.parse_args(['--direct', 'A:/Work/',
-                              '--cycles','1',
-                              '--noise','0',
+                              '--noise','0.001',
                               '-v',
                               '--batch','64',
-                              '-h1','8',
-                              '--layers','4',
-                              '-lr', '1e-2', '--decay', '1e-6',
+                              '-h1','16',
+                              '--layers','2',
+                              '-lr', '5e-3', '--decay', '1e-6',
                               '-e', '10',
                               '--pint','1',
                               '--optim','adamw',
@@ -278,7 +281,7 @@ if __name__ == "__main__":
         start = time.time()
         train_loss, encoder, densifier = train(
             encoder, densifier, train_loader, optimizer, criterion,
-            args.cycles, args.noise, device)
+            args.noise, device)
         train_time = time.time() - start 
         train_losses.append(train_loss)
         if epoch % args.pint == 0:

@@ -52,29 +52,59 @@ class tet10_densify(nn.Module):
     def __init__(self, codeword_size=16):
         super(tet10_densify, self).__init__()
         self.codeword_size = codeword_size
-        self.feature_size = 31
+        self.feature_size = 30
         self.act = nn.LeakyReLU()
-        
-        self.fc1 = nn.Linear(self.feature_size+codeword_size,self.codeword_size)
-        self.fc2 = nn.Linear(1+self.codeword_size, self.codeword_size)
-        self.fc3 = nn.Linear(self.codeword_size,8)
-        self.fc4 = nn.Linear(9,4)
-        self.fc5 = nn.Linear(5,1)
-        
-    
+
+        # Cortical
+        self.fc1_cort = nn.Linear(self.feature_size + codeword_size, self.codeword_size)
+        self.fc2_cort = nn.Linear(self.codeword_size, self.codeword_size)
+        self.fc3_cort = nn.Linear(self.codeword_size, 8)
+        self.fc4_cort = nn.Linear(8, 4)
+        self.fc5_cort = nn.Linear(4, 2)
+
+        # Trabecular
+        self.fc1_trab = nn.Linear(self.feature_size + codeword_size, self.codeword_size)
+        self.fc2_trab = nn.Linear(self.codeword_size, self.codeword_size)
+        self.fc3_trab = nn.Linear(self.codeword_size, 8)
+        self.fc4_trab = nn.Linear(8, 4)
+        self.fc5_trab = nn.Linear(4, 2)
+
     def forward(self, elems, encoded_features):
-        # x shape: (B, E, 31) - Original features
+        # elems shape: (B, E, 31) - Original features
         # encoded_features shape: (B, E, 16) - Encoded features
         B, E, _ = elems.size()
+
+        # Combine elements with encoded features (B, E, 30 + codeword_size)
+        x = torch.cat((elems[:, :, :-1], encoded_features), dim=2)
+
+        # Extract cortical (xs == 1) and trabecular (xs == 0) features
+        xs = elems[:, :, -1]  # cortical or trabecular indicator (last column in elems)
         
-        x = torch.cat((elems, encoded_features), dim=2)  # (B, E, 31 + codeword)
-        xs = elems[:,:,-1]
-        
-        x = self.act(self.fc1(x))
-        x = torch.cat([x,xs.unsqueeze(2)],dim=2)
-        x = self.act(self.fc2(x))
-        x = self.act(self.fc3(x))
-        x = torch.cat([x,xs.unsqueeze(2)],dim=2)
-        x = self.act(self.fc4(x))
-        x = torch.cat([x,xs.unsqueeze(2)],dim=2)
-        return torch.relu(self.fc5(x)) #force non-negative density values with relu
+        cort_indices = (xs == 1).nonzero(as_tuple=True)
+        trab_indices = (xs == 0).nonzero(as_tuple=True)
+        x_combined = torch.zeros(B, E, 2, device=x.device)
+        # Cortical
+        x_cort = x[cort_indices]
+        x_cort = self.act(self.fc1_cort(x_cort))
+        x_cort = self.act(self.fc2_cort(x_cort))
+        x_cort = self.act(self.fc3_cort(x_cort))
+        x_cort = self.act(self.fc4_cort(x_cort))
+        x_cort = torch.relu(self.fc5_cort(x_cort))  # (B, E, 2)
+
+        # Trabecular
+        x_trab = x[trab_indices]
+        x_trab = self.act(self.fc1_trab(x_trab))
+        x_trab = self.act(self.fc2_trab(x_trab))
+        x_trab = self.act(self.fc3_trab(x_trab))
+        x_trab = self.act(self.fc4_trab(x_trab))
+        x_trab = torch.relu(self.fc5_trab(x_trab))  # (B, E, 2)
+
+        # Concatenate cortical and trabecular back together
+        x_combined[cort_indices] = x_cort
+        x_combined[trab_indices] = x_trab
+
+        # Extract mean and variance
+        mn = x_combined[:, :, 0]
+        var = torch.relu(x_combined[:, :, 1]) + 1e-6
+
+        return mn, var

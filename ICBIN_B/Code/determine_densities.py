@@ -60,7 +60,7 @@ if __name__ == "__main__":
                               #'-b',
                               '-l','small',
                               '--hidden1', '16',
-                              '--layers', '1'
+                              '--layers', '2'
                               ])
     
     if torch.cuda.is_available():
@@ -96,11 +96,11 @@ if __name__ == "__main__":
     plot_weights(encoder, 'lstm.weight_hh_l0')
     plot_weights(encoder, 'fc1')
     
-    plot_weights(densifier, 'fc1.weight')
-    plot_weights(densifier, 'fc2.weight')
-    plot_weights(densifier, 'fc3.weight')
-    plot_weights(densifier, 'fc4.weight')
-    plot_weights(densifier, 'fc5.weight')
+    # plot_weights(densifier, 'fc1.weight')
+    # plot_weights(densifier, 'fc2.weight')
+    # plot_weights(densifier, 'fc3.weight')
+    # plot_weights(densifier, 'fc4.weight')
+    # plot_weights(densifier, 'fc5.weight')
     all_data = {}
     
     #densify all inp_files
@@ -123,7 +123,7 @@ if __name__ == "__main__":
         
         with torch.no_grad():
             encoded = encoder(X)
-            d_out = densifier(X, encoded)
+            d_out, _ = densifier(X, encoded)
         
         d_out = (d_out * scale_factor).detach().cpu().numpy()
         element_data[:,-1] = d_out.flatten()
