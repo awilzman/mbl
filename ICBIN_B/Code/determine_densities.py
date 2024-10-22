@@ -1,10 +1,49 @@
 import torch
+import torch.nn as nn
 import argparse
 import os
 import inp_sleuth as inpsl
 import density_networks as dnets
 import numpy as np
 import pyvista as pv
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+def plot_weights(model, layer_name):
+    """Plot the weights of a specific layer or parameter in the model."""
+    # Handle if layer_name is for a specific parameter (e.g., LSTM weights)
+    if layer_name in dict(model.named_parameters()):
+        layer_weights = dict(model.named_parameters())[layer_name].detach().cpu().numpy()
+        
+        # Plot the weights
+        plt.figure(figsize=(10, 6))
+        sns.heatmap(layer_weights, cmap='viridis', annot=False)
+        plt.title(f'Weights of {layer_name}')
+        plt.xlabel('Neurons')
+        plt.ylabel('Inputs')
+        plt.show()
+
+    # Handle Sequential layers
+    elif layer_name in dict(model.named_modules()):
+        layer = dict(model.named_modules())[layer_name]
+        
+        if isinstance(layer, nn.Sequential):
+            # Iterate over sublayers and plot their weights
+            for idx, sublayer in enumerate(layer):
+                if hasattr(sublayer, 'weight'):
+                    layer_weights = sublayer.weight.detach().cpu().numpy()
+                    plt.figure(figsize=(10, 6))
+                    sns.heatmap(layer_weights, cmap='viridis', annot=False)
+                    plt.title(f'Weights of {layer_name}[{idx}] ({sublayer.__class__.__name__})')
+                    plt.xlabel('Neurons')
+                    plt.ylabel('Inputs')
+                    plt.show()
+        else:
+            raise KeyError(f"Layer '{layer_name}' is not a Sequential or named parameter.")
+    else:
+        raise KeyError(f"Layer '{layer_name}' not found in model.")
+
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -18,10 +57,10 @@ if __name__ == "__main__":
     parser.add_argument('-v','--visualize', action='store_true')
 
     args = parser.parse_args(['-d', 'A:/Work/','-v',
-                              '-l','lstm_adam',
+                              #'-b',
+                              '-l','small',
                               '--hidden1', '16',
-                              '--layers', '2',
-                              '--experts','1'
+                              '--layers', '1'
                               ])
     
     if torch.cuda.is_available():
@@ -41,9 +80,8 @@ if __name__ == "__main__":
     inp_files = [f for f in os.listdir(fab_data) if f.endswith('.inp')]
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    encoder = dnets.tet10_encoder(args.hidden1, args.layers, args.experts, args.bidir).to(device)
-    decoder = dnets.tet10_decoder(args.hidden1).to(device)
-    densifier = dnets.tet10_densify(args.hidden1, args.experts).to(device)
+    encoder = dnets.tet10_encoder(args.hidden1, args.layers, args.bidir).to(device)
+    densifier = dnets.tet10_densify(args.hidden1).to(device)
     
     checkpoint = torch.load(os.path.join(args.direct, 'Models', args.load))
     encoder.load_state_dict(checkpoint['encoder_state_dict'])
@@ -54,6 +92,15 @@ if __name__ == "__main__":
     test_loss = checkpoint['testing_loss']
     scale_factor = checkpoint['scale_factor']
     
+    plot_weights(encoder, 'lstm.weight_ih_l0')
+    plot_weights(encoder, 'lstm.weight_hh_l0')
+    plot_weights(encoder, 'fc1')
+    
+    plot_weights(densifier, 'fc1.weight')
+    plot_weights(densifier, 'fc2.weight')
+    plot_weights(densifier, 'fc3.weight')
+    plot_weights(densifier, 'fc4.weight')
+    plot_weights(densifier, 'fc5.weight')
     all_data = {}
     
     #densify all inp_files

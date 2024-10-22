@@ -65,54 +65,37 @@ def collate_fn(batch):
     
     return features_padded, labels_padded
 
-def train(encoder, decoder, densifier, dataloader, optimizer, criterion, 
-          decode, cycles, loss_mag, noise, device):
+def train(encoder, densifier, dataloader, optimizer, criterion, 
+          cycles, noise, device):
     encoder.train()
     densifier.train()
     total_loss = 0.0
-
     for features, labels in dataloader:
         features, labels = features.to(device), labels.to(device)
-        
-        indices = features[:, :, -1]
-        decoded_features = features  # Avoid unnecessary clone
         cortical_features = features[:, :, -1]
         
-        if decode:
-            decoder.train()
-            for i in range(cycles):
-                encoded_features = encoder(decoded_features)
-                # No need to use detach here, only when not tracking gradients
-                with torch.no_grad():
-                    decoded_features = decoder(encoded_features, indices)
-                
-            loss = criterion(features, decoded_features)
-        else:
-            loss = 0
-            encoded_features = encoder(decoded_features)
+        encoded_features = encoder(features)
         
-        # Variational Autoencoder to latent -> N(0,1), efficient kl_loss
-        kl_loss = 0.5 * encoded_features.pow(2).sum(dim=-1).mean()
-
-        # Add noise directly, no detach needed
-        decoded_features = decoded_features + torch.randn_like(decoded_features) * noise
         encoded_features = encoded_features + torch.randn_like(encoded_features) * noise
 
         # Densifier step
-        densified_output = densifier(decoded_features, encoded_features)
+        densified_output = densifier(features, encoded_features)
         
         # Cortical densities must be higher: assume (0,1), see dataset
         cf_idx = cortical_features == 1
         densified_output_squeezed = densified_output.squeeze(-1)
-        low_count = torch.count_nonzero(densified_output_squeezed[cf_idx] < 0.5).item()
+        low_count = (densified_output_squeezed[cf_idx] <= 0.5).sum().item()
         
-        scaling_factor = low_count / features.shape[0]
+        low_count = low_count / features.shape[0]
 
         # MSE loss with single squeeze
-        mse_loss = masked_mse(densified_output_squeezed, labels) * scaling_factor
+        mse_loss = masked_mse(densified_output_squeezed, labels)
         
+        # Variational Autoencoder to latent -> N(0,1), efficient kl_loss
+        kl_loss = 0.5 * encoded_features.pow(2).sum(dim=-1).mean()
+            
         # Final loss calculation
-        loss += (mse_loss + loss_mag * kl_loss) * loss_mag
+        loss = low_count*(mse_loss + kl_loss*1e4)
 
         optimizer.zero_grad()
         loss.backward()
@@ -122,10 +105,10 @@ def train(encoder, decoder, densifier, dataloader, optimizer, criterion,
         
     total_loss /= len(dataloader)
     
-    return total_loss, encoder, decoder, densifier
+    return total_loss, encoder, densifier
 
 
-def evaluate(encoder, decoder, densifier, dataloader, criterion, device):
+def evaluate(encoder, densifier, dataloader, criterion, device):
     total_loss = 0.0
     print('Testing.')
     with torch.no_grad():
@@ -187,11 +170,9 @@ if __name__ == "__main__":
     parser.add_argument('-e', '--epochs', type=int, default=0)
     parser.add_argument('-h1', '--hidden1', type=int, default=8)
     parser.add_argument('--layers', type=int, default=1)
-    parser.add_argument('--experts', type=int, default=1)
     parser.add_argument('-b', '--bidir', action='store_true')
     parser.add_argument('-lr', type=float, default=1e-3)
     parser.add_argument('--noise', type=float, default=0)
-    parser.add_argument('--loss_mag', type=float, default=1.0)
     parser.add_argument('--decay', type=float, default=1e-4)
     parser.add_argument('--batch', type=int, default=32)
     parser.add_argument('--cycles', type=int, default=1)
@@ -199,27 +180,21 @@ if __name__ == "__main__":
     parser.add_argument('--name', type=str, default='')
     parser.add_argument('--load', type=str, default='')
     parser.add_argument('--optim', type=str, default='Adam')
-    parser.add_argument('-a', '--autoencode', action='store_true')
-    parser.add_argument('-vae', action='store_true')
     parser.add_argument('-v', '--visual', action='store_true')
     
     args = parser.parse_args(['--direct', 'A:/Work/',
-                              '-a',
                               '--cycles','1',
-                              '--noise','0.1',
+                              '--noise','0',
                               '-v',
                               '--batch','64',
-                              '-h1','16',
-                              '--layers','2',
-                              '--experts','1',
-                              #'-b',
-                              '-lr', '1e-2', '--decay', '2e-5',
-                              '-e', '70',
+                              '-h1','8',
+                              '--layers','4',
+                              '-lr', '1e-2', '--decay', '1e-6',
+                              '-e', '10',
                               '--pint','1',
-                              '--loss_mag','1e9',
-                              '--optim','adam',
-                              '--load', 'lstm_adam',
-                              '--name', 'lstm_adam'])
+                              '--optim','adamw',
+                              #'--load', 'small',
+                              '--name', 'small'])
 
     if torch.cuda.is_available():
         print('CUDA available')
@@ -241,12 +216,12 @@ if __name__ == "__main__":
         args.seed = torch.randint(10, 8545, (1,)).item() 
         
     torch.manual_seed(args.seed)
+    print(f'seed: {args.seed}')
     
     # Models
-    encoder = dnets.tet10_encoder(args.hidden1, args.layers, args.experts, args.bidir).to(device)
-    decoder = dnets.tet10_decoder(args.hidden1).to(device)
-    densifier = dnets.tet10_densify(args.hidden1, args.experts).to(device)
-        
+    encoder = dnets.tet10_encoder(args.hidden1, args.layers, args.bidir).to(device)
+    densifier = dnets.tet10_densify(args.hidden1).to(device)
+    
     # Data Loaders
     train_dataset = MetatarsalDataset(train_dir)
     test_dataset = MetatarsalDataset(test_dir)
@@ -255,7 +230,7 @@ if __name__ == "__main__":
     test_loader = DataLoader(test_dataset, batch_size=1, shuffle=True, collate_fn=collate_fn)
         
     # Optimizer and Criterion
-    param_groups = list(encoder.parameters()) + list(decoder.parameters()) + list(densifier.parameters())
+    param_groups = list(encoder.parameters()) + list(densifier.parameters())
     
     optimizer_dict = {
         'adam': lambda: optim.Adam(param_groups, lr=args.lr, weight_decay=args.decay),
@@ -267,12 +242,9 @@ if __name__ == "__main__":
     
     optimizer_name = args.optim.lower()
     
-    if optimizer_name in optimizer_dict:
-        optimizer = optimizer_dict[optimizer_name]()
-    else:
-        raise ValueError(f"Unsupported optimizer '{optimizer_name}'. Choose from {list(optimizer_dict.keys())}.")
+    optimizer = optimizer_dict[optimizer_name]()
         
-    criterion = nn.MSELoss()
+    criterion = nn.HuberLoss()
     train_loss_hist = []
     new_flag = False
     if args.load != '':
@@ -284,12 +256,6 @@ if __name__ == "__main__":
             print(f'Successfully loaded {args.load} encoder')
         except:
             print(f'Something went wrong loading {args.load} encoder, starting new!')
-            new_flag = True
-        try:
-            decoder.load_state_dict(checkpoint['decoder_state_dict'])
-            print(f'Successfully loaded {args.load} decoder')
-        except:
-            print(f'Something went wrong loading {args.load} decoder, starting new!')
             new_flag = True
         
         try:
@@ -310,9 +276,9 @@ if __name__ == "__main__":
     train_losses = []
     for epoch in range(start_epoch, args.epochs):
         start = time.time()
-        train_loss, encoder, decoder, densifier = train(
-            encoder, decoder, densifier, train_loader, optimizer, criterion,
-            args.autoencode, args.cycles, args.loss_mag, args.noise, device)
+        train_loss, encoder, densifier = train(
+            encoder, densifier, train_loader, optimizer, criterion,
+            args.cycles, args.noise, device)
         train_time = time.time() - start 
         train_losses.append(train_loss)
         if epoch % args.pint == 0:
@@ -320,13 +286,12 @@ if __name__ == "__main__":
                   f'Train Time: {train_time:7.2f} s, Train Loss: {train_loss:8.3e}')
     
     criterion = nn.L1Loss()
-    test_loss = evaluate(encoder, decoder, densifier, test_loader, criterion, device)
+    test_loss = evaluate(encoder, densifier, test_loader, criterion, device)
     
     path = args.direct+'Models/'+args.name+'.pth' 
     
     state = {
         'encoder_state_dict': encoder.state_dict(),
-        'decoder_state_dict': decoder.state_dict(),
         'densifier_state_dict': densifier.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),
         'epoch': epoch,
