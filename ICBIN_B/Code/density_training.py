@@ -32,7 +32,7 @@ class MetatarsalDataset(Dataset):
 
         # Automatically calculate the scaling factor based on the maximum label value
         all_labels = torch.cat(self.labels)
-        self.label_scaling_factor = all_labels.max().item() if all_labels.max() > 0 else 1.0
+        self.label_scaling_factor = all_labels.max().item()
 
         # Normalize labels (0,1)
         self.labels = [label / self.label_scaling_factor for label in self.labels]
@@ -65,42 +65,27 @@ def collate_fn(batch):
     
     return features_padded, labels_padded
 
-def NLL_loss(mean, variance, targets):
-    # Clamp variance to avoid division by zero or negative variance
-    variance = torch.clamp(variance, min=1e-6)
-    
-    nll = 0.5 * ((targets - mean) ** 2 / variance + torch.log(variance))
-    return nll.mean()
-
 def train(encoder, densifier, dataloader, optimizer, criterion, noise, device):
     encoder.train()
     densifier.train()
     total_loss = 0.0
     for features, labels in dataloader:
         features, labels = features.to(device), labels.to(device)
-        cortical_features = features[:, :, -1]
         
         encoded_features = encoder(features)
+        
+        # Variational Autoencoder to latent -> N(0,1), efficient kl_loss
+        kl_loss = 0.5 * encoded_features.pow(2).sum(dim=-1).mean()
         
         encoded_features = encoded_features + torch.randn_like(encoded_features) * noise
 
         # Densifier step
-        mn, var = densifier(features, encoded_features)
+        densities = densifier(features, encoded_features)
         
-        # Cortical densities must be higher: assume (0,1), see dataset
-        cf_idx = cortical_features == 1
-        densified_output_squeezed = mn.squeeze(-1)
-        low_count = (densified_output_squeezed[cf_idx] <= 0.5).sum().item()
+        loss = criterion(densities[labels != 0].squeeze(-1), labels[labels != 0])
         
-        low_count = 1+(low_count / features.shape[0])
-        
-        NLLloss = NLL_loss(mn.squeeze(-1), var.squeeze(-1), labels)
-        
-        # Variational Autoencoder to latent -> N(0,1), efficient kl_loss
-        kl_loss = 0.5 * encoded_features.pow(2).sum(dim=-1).mean()
-            
         # Final loss calculation
-        loss = (low_count/5e3) + (NLLloss/2e5) + kl_loss
+        loss = loss + kl_loss
 
         optimizer.zero_grad()
         loss.backward()
@@ -121,16 +106,14 @@ def evaluate(encoder, densifier, dataloader, criterion, device):
             features, labels = features.to(device), labels.to(device)
             
             encoded_features = encoder(features)
-            densified_output, _ = densifier(features, encoded_features)
+            densities = densifier(features, encoded_features)
             
-            loss = criterion(densified_output.squeeze(-1), labels)
+            loss = criterion(densities[labels != 0].squeeze(-1), labels[labels != 0])
             total_loss += loss.item()
     
     return total_loss / len(dataloader)
 
 def plot_loss(title, train_losses, old_losses=None):
-    
-    import matplotlib.pyplot as plt
     
     plt.figure(figsize=(10, 6))
     
@@ -151,23 +134,43 @@ def plot_loss(title, train_losses, old_losses=None):
     plt.legend()
     plt.grid(True)
     plt.show()
-    
-def masked_mse(predictions, targets):
-    # Remove zeros from MSE measurement
-    # Then penalize number of zero predictions
-    non_zero_indices = targets != 0
-    filtered_predictions = predictions[non_zero_indices]
-    filtered_targets = targets[non_zero_indices]
-    mse_loss = torch.mean((filtered_predictions - filtered_targets) ** 2)
-    
-    zero_count = torch.sum(filtered_predictions == 0)
-    
-    scaling_factor = torch.where(zero_count > 100, 4.0,
-                       torch.where(zero_count > 50, 2.0,
-                       torch.where(zero_count > 0, 1.5, 1.0)))
-    
-    return mse_loss * scaling_factor
 
+def show_bone(bone,scale):
+    import pyvista as pv
+    import numpy as np
+    points = []
+    cells = []
+    
+    for elem in bone[0]:
+        nodes = elem[:30].reshape(10, 3)  # 10 nodes for each tetrahedron
+        points.extend(nodes)
+        start_idx = len(points) - 10  
+        cells.append([10] + list(range(start_idx, start_idx + 10)))
+
+    points = np.array(points)
+    
+    cell_type = np.full(len(cells), pv.CellType.TETRA, dtype=np.int8)
+    grid = pv.UnstructuredGrid(cells, cell_type, points)
+    grid.cell_data['E11'] = bone[1]*scale
+    
+    plotter = pv.Plotter()
+    slices = grid.slice_orthogonal(x=0, y=0, z=0)
+    plotter.add_mesh(slices, scalars='E11', show_edges=True, 
+                     cmap='viridis',interpolate_before_map=False)
+    
+    # Create and show random slices
+    num_slices = 20 
+    for i in range(num_slices):
+        x = (np.random.rand(1)-0.5)/100
+        y = (np.random.rand(1)-0.5)/100
+        z = (np.random.rand(1)-0.5)/100
+
+        random_slice = grid.slice_orthogonal(x=x, y=y, z=z)
+        plotter.add_mesh(random_slice, scalars='E11', cmap='viridis',
+                         interpolate_before_map=False)
+        
+    plotter.show()
+    
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--direct', type=str, default='')
@@ -187,17 +190,17 @@ if __name__ == "__main__":
     parser.add_argument('-v', '--visual', action='store_true')
     
     args = parser.parse_args(['--direct', 'A:/Work/',
-                              '--noise','0.001',
+                              '--noise','0.0002',
                               '-v',
                               '--batch','64',
                               '-h1','16',
                               '--layers','2',
-                              '-lr', '5e-3', '--decay', '1e-6',
-                              '-e', '10',
+                              '-lr', '1e-2', '--decay', '1e-6',
+                              '-e', '100',
                               '--pint','1',
-                              '--optim','adamw',
-                              #'--load', 'small',
-                              '--name', 'small'])
+                              '--optim','adam',
+                              '--load', 'med',
+                              '--name', 'med'])
 
     if torch.cuda.is_available():
         print('CUDA available')
@@ -233,19 +236,30 @@ if __name__ == "__main__":
     test_loader = DataLoader(test_dataset, batch_size=1, shuffle=True, collate_fn=collate_fn)
         
     # Optimizer and Criterion
-    param_groups = list(encoder.parameters()) + list(densifier.parameters())
+    param_groups = [
+        {'params': encoder.parameters(), 'lr': args.lr * 0.1, 'weight_decay': args.decay},
+        {'params': densifier.parameters(), 'lr': args.lr, 'weight_decay': args.decay}
+    ]
     
+    # Optimizer Dictionary
     optimizer_dict = {
-        'adam': lambda: optim.Adam(param_groups, lr=args.lr, weight_decay=args.decay),
-        'rms': lambda: optim.RMSprop(param_groups, lr=args.lr, alpha=0.95, eps=1e-8, weight_decay=args.decay),
-        'sgd': lambda: optim.SGD(param_groups, lr=args.lr, momentum=0.9, weight_decay=args.decay),
-        'adamw': lambda: optim.AdamW(param_groups, lr=args.lr, weight_decay=args.decay),
-        'adagrad': lambda: optim.Adagrad(param_groups, lr=args.lr, lr_decay=0, weight_decay=args.decay)
+        'adam': lambda: optim.Adam(param_groups),
+        'rms': lambda: optim.RMSprop(param_groups, alpha=0.95, eps=1e-8),
+        'sgd': lambda: optim.SGD(param_groups, momentum=0.9),
+        'adamw': lambda: optim.AdamW(param_groups),
+        'adagrad': lambda: optim.Adagrad(param_groups, lr_decay=0)
     }
     
+    # Handle optimizer selection
     optimizer_name = args.optim.lower()
+    if optimizer_name not in optimizer_dict:
+        raise ValueError(f"Optimizer '{optimizer_name}' not recognized. Available options are: {list(optimizer_dict.keys())}")
     
+    # Instantiate the optimizer
     optimizer = optimizer_dict[optimizer_name]()
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer,'min')
+    # Criterion
+    criterion = nn.HuberLoss()
         
     criterion = nn.HuberLoss()
     train_loss_hist = []
@@ -287,7 +301,8 @@ if __name__ == "__main__":
         if epoch % args.pint == 0:
             print(f'Epoch [{epoch+1:4d}/{args.epochs:4d}], '
                   f'Train Time: {train_time:7.2f} s, Train Loss: {train_loss:8.3e}')
-    
+        scheduler.step(train_loss)
+        
     criterion = nn.L1Loss()
     test_loss = evaluate(encoder, densifier, test_loader, criterion, device)
     
@@ -311,6 +326,10 @@ if __name__ == "__main__":
     print(f'Saved {args.name}. Test MAE: {test_loss:.3e}')
     
     if args.visual:
+        import matplotlib.pyplot as plt
+        #print('Showing example input data...')
+        #show_bone(test_dataset[0],train_dataset.label_scaling_factor)
+        
         if args.load != '':
             plot_loss(args.name,train_losses,train_loss_hist)
         else:

@@ -4,6 +4,7 @@ import argparse
 import os
 import inp_sleuth as inpsl
 import density_networks as dnets
+import density_training as dtrn
 import numpy as np
 import pyvista as pv
 import matplotlib.pyplot as plt
@@ -58,7 +59,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args(['-d', 'A:/Work/','-v',
                               #'-b',
-                              '-l','small',
+                              '-l','med',
                               '--hidden1', '16',
                               '--layers', '2'
                               ])
@@ -95,12 +96,6 @@ if __name__ == "__main__":
     plot_weights(encoder, 'lstm.weight_ih_l0')
     plot_weights(encoder, 'lstm.weight_hh_l0')
     plot_weights(encoder, 'fc1')
-    
-    # plot_weights(densifier, 'fc1.weight')
-    # plot_weights(densifier, 'fc2.weight')
-    # plot_weights(densifier, 'fc3.weight')
-    # plot_weights(densifier, 'fc4.weight')
-    # plot_weights(densifier, 'fc5.weight')
     all_data = {}
     
     #densify all inp_files
@@ -115,7 +110,7 @@ if __name__ == "__main__":
         element_data = inp_parser.create_element_data()
         
         #guess densities, inp_parser has 0s in place of density if not read
-        X = torch.FloatTensor(element_data[:,:-1])
+        X = torch.FloatTensor(element_data[:,:-1]*1e-3) # mm -> m 
         sorted_indices = torch.argsort(X[:, 2])
         sorted_indices = sorted_indices[torch.argsort(X[sorted_indices, 1])]
         sorted_indices = sorted_indices[torch.argsort(X[sorted_indices, 0])]
@@ -123,48 +118,11 @@ if __name__ == "__main__":
         
         with torch.no_grad():
             encoded = encoder(X)
-            d_out, _ = densifier(X, encoded)
-        
-        d_out = (d_out * scale_factor).detach().cpu().numpy()
-        element_data[:,-1] = d_out.flatten()
+            d_out = densifier(X, encoded)
             
-        all_data[inp_file].append(element_data)
+        X = X.detach().cpu().numpy().squeeze(0)
+        d_out = d_out.detach().cpu().numpy().squeeze(0)
         
-        if args.savevtk or args.visualize:
-            points = []
-            cells = []
+        if args.visualize:
             
-            for elem in element_data:
-                nodes = elem[:30].reshape(10, 3)  # 10 nodes for each tetrahedron
-                points.extend(nodes)
-                start_idx = len(points) - 10  
-                cells.append([10] + list(range(start_idx, start_idx + 10)))
-        
-        
-            points = np.array(points)
-            #develop tetrahedral mesh
-            cell_type = np.full(len(cells), pv.CellType.TETRA, dtype=np.int8)
-            grid = pv.UnstructuredGrid(cells, cell_type, points)
-            grid.cell_data['E11'] = element_data[:,-1]
-                    
-            if args.savevtk:
-                grid.save(f"{fab_data}{inp_file[:-4]}.vtk")
-            
-            if args.visualize:
-                plotter = pv.Plotter()
-                slices = grid.slice_orthogonal(x=0, y=0, z=0)
-                plotter.add_mesh(slices, scalars='E11', show_edges=True, 
-                                 cmap='viridis',interpolate_before_map=False)
-                
-                # Create and show random slices
-                num_slices = 20 
-                for i in range(num_slices):
-                    x = (np.random.rand(1)-0.5)*10
-                    y = (np.random.rand(1)-0.5)*10
-                    z = (np.random.rand(1)-0.5)*10
-            
-                    random_slice = grid.slice_orthogonal(x=x, y=y, z=z)
-                    plotter.add_mesh(random_slice, scalars='E11', cmap='viridis',
-                                     interpolate_before_map=False)
-                    
-                plotter.show()
+            dtrn.show_bone([X,d_out],scale_factor)

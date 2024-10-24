@@ -57,17 +57,17 @@ class tet10_densify(nn.Module):
 
         # Cortical
         self.fc1_cort = nn.Linear(self.feature_size + codeword_size, self.codeword_size)
-        self.fc2_cort = nn.Linear(self.codeword_size, self.codeword_size)
-        self.fc3_cort = nn.Linear(self.codeword_size, 8)
+        self.fc2_cort = nn.Linear(self.codeword_size, 16)
+        self.fc3_cort = nn.Linear(16, 8)
         self.fc4_cort = nn.Linear(8, 4)
-        self.fc5_cort = nn.Linear(4, 2)
+        self.fc5_cort = nn.Linear(4, 1)
 
         # Trabecular
         self.fc1_trab = nn.Linear(self.feature_size + codeword_size, self.codeword_size)
-        self.fc2_trab = nn.Linear(self.codeword_size, self.codeword_size)
-        self.fc3_trab = nn.Linear(self.codeword_size, 8)
+        self.fc2_trab = nn.Linear(self.codeword_size, 16)
+        self.fc3_trab = nn.Linear(16, 8)
         self.fc4_trab = nn.Linear(8, 4)
-        self.fc5_trab = nn.Linear(4, 2)
+        self.fc5_trab = nn.Linear(4, 1)
 
     def forward(self, elems, encoded_features):
         # elems shape: (B, E, 31) - Original features
@@ -80,16 +80,17 @@ class tet10_densify(nn.Module):
         # Extract cortical (xs == 1) and trabecular (xs == 0) features
         xs = elems[:, :, -1]  # cortical or trabecular indicator (last column in elems)
         
-        cort_indices = (xs == 1).nonzero(as_tuple=True)
-        trab_indices = (xs == 0).nonzero(as_tuple=True)
-        x_combined = torch.zeros(B, E, 2, device=x.device)
+        cort_indices = (xs == 1)
+        trab_indices = (xs == 0)
+        x_combined = torch.zeros(B, E, 1, device=x.device)
+        
         # Cortical
         x_cort = x[cort_indices]
         x_cort = self.act(self.fc1_cort(x_cort))
         x_cort = self.act(self.fc2_cort(x_cort))
         x_cort = self.act(self.fc3_cort(x_cort))
         x_cort = self.act(self.fc4_cort(x_cort))
-        x_cort = torch.relu(self.fc5_cort(x_cort))  # (B, E, 2)
+        x_cort = torch.relu(self.fc5_cort(x_cort))  # (B, E, 1)
 
         # Trabecular
         x_trab = x[trab_indices]
@@ -97,14 +98,10 @@ class tet10_densify(nn.Module):
         x_trab = self.act(self.fc2_trab(x_trab))
         x_trab = self.act(self.fc3_trab(x_trab))
         x_trab = self.act(self.fc4_trab(x_trab))
-        x_trab = torch.relu(self.fc5_trab(x_trab))  # (B, E, 2)
+        x_trab = torch.relu(self.fc5_trab(x_trab))  # (B, E, 1)
 
         # Concatenate cortical and trabecular back together
         x_combined[cort_indices] = x_cort
         x_combined[trab_indices] = x_trab
 
-        # Extract mean and variance
-        mn = x_combined[:, :, 0]
-        var = torch.relu(x_combined[:, :, 1]) + 1e-6
-
-        return mn, var
+        return x_combined
