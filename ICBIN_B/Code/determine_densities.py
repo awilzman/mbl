@@ -56,12 +56,13 @@ if __name__ == "__main__":
     parser.add_argument('-b','--bidir', action='store_true')
     parser.add_argument('--savevtk', action='store_true')
     parser.add_argument('-v','--visualize', action='store_true')
+    parser.add_argument('-n','--noise', type=float, default=1e-3)
 
     args = parser.parse_args(['-d', 'A:/Work/','-v',
                               #'-b',
-                              '-l','med',
-                              '--hidden1', '16',
-                              '--layers', '2'
+                              '-l','simp2',
+                              '--hidden1', '32',
+                              '--layers', '4'
                               ])
     
     if torch.cuda.is_available():
@@ -118,6 +119,7 @@ if __name__ == "__main__":
         
         with torch.no_grad():
             encoded = encoder(X)
+            encoded = encoded + torch.randn_like(encoded) * args.noise
             d_out = densifier(X, encoded)
             
         X = X.detach().cpu().numpy().squeeze(0)
