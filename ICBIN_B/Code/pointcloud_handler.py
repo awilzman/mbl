@@ -156,19 +156,20 @@ if __name__ == "__main__":
     
     directory = args.directory + 'Data/'
     volumes = directory + 'Volumes/'
-    samps = os.listdir(directory + 'Unfiltered_PCs/')
-
-    if args.samp != '':
+    samps = os.listdir(directory + 'Unfiltered_PCs/Cadaver/') + \
+            os.listdir(directory + 'Unfiltered_PCs/Runner/')
+            
+    study_dirs = {'R15': 'Runner', 'MTSFX': 'Runner'}
+    default_dir = 'Cadaver'
+    
+    if args.samp:
         if args.samp not in samps:
-            print('Sample not available')
-            # Handle unavailable sample...
-        else:
-            samps = [args.samp]
-
-    reference_pcd = None
+            raise ValueError(f"Sample '{args.samp}' not available")
+        samps = [args.samp]
     
     for s in samps:
-        MTs = os.listdir(directory + f'Unfiltered_PCs/{s}')
+        sample_dir = next((study_dirs[code] for code in study_dirs if code in s), default_dir)
+        MTs = os.listdir(f"{directory}Unfiltered_PCs/{sample_dir}/{s}")
         if not MTs:
             print(f'No samples found in {s}')
             continue
@@ -193,7 +194,7 @@ if __name__ == "__main__":
                 print(f'Error in {s}/{MT}, name is not right')
                 continue
             
-            pc = pd.read_csv(directory + f'Unfiltered_PCs/{s}/{MT}', header=None, sep=',')
+            pc = pd.read_csv(f"{directory}Unfiltered_PCs/{sample_dir}/{s}/{MT}", header=None, sep=',')
             if len(pc.columns) == 4:
                 pc.columns = ['x', 'y', 'z', 'd']
             else:
