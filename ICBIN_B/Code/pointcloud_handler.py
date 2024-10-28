@@ -147,7 +147,7 @@ if __name__ == "__main__":
     parser.add_argument('-alpha', type=float, default=0.5,help='surface finish')
     parser.add_argument('-stl', action='store_true', default=False)
     parser.add_argument('-vtk', action='store_true', default=False)
-    args = parser.parse_args(['-t',
+    args = parser.parse_args(['-t','-stl'
                               ])
     if args.reseg:
         args.recloud = True
@@ -168,6 +168,7 @@ if __name__ == "__main__":
         samps = [args.samp]
     
     for s in samps:
+        stl_only = False
         sample_dir = next((study_dirs[code] for code in study_dirs if code in s), default_dir)
         MTs = os.listdir(f"{directory}Unfiltered_PCs/{sample_dir}/{s}")
         if not MTs:
@@ -182,7 +183,9 @@ if __name__ == "__main__":
             b = [m.split('.')[0] for m in MT_comp]
             if a == b and args.skip:
                 print(f'skipped {s}')
-                continue
+                if args.stl:
+                    print('still making stls')
+                stl_only = True
         
         for MT in MTs:
             MTname = MT.split('.')[0]
@@ -252,22 +255,25 @@ if __name__ == "__main__":
                 point_cloud = o3d.geometry.PointCloud()
                 point_cloud.points = o3d.utility.Vector3dVector(surf_pc[['x', 'y', 'z']].to_numpy())
                 o3d.visualization.draw_geometries([point_cloud])
-                
+            
             if args.truncate:
                 if len(surf_pc) > args.trunc // 5:
                     surf_pc = surf_pc.sample(n=args.trunc // 5, replace=True, random_state=42)
                     print('sampling surface')
                 elif len(surf_pc) < 2000:
                     print('uh oh, small surface')
-                
-            with h5py.File(f'{directory}Compressed/{s}/{MTname}.h5', 'w') as hf:
-                hf.create_dataset('Pointcloud', data=reor_pc)
-                hf.create_dataset('Surface', data=surf_pc)
-                hf.create_dataset('MTno', data=MTno)
-                hf.create_dataset('Side', data=MTside)
+                    
+            if not stl_only:  
+                with h5py.File(f'{directory}Compressed/{s}/{MTname}.h5', 'w') as hf:
+                    hf.create_dataset('Pointcloud', data=reor_pc)
+                    hf.create_dataset('Surface', data=surf_pc)
+                    hf.create_dataset('MTno', data=MTno)
+                    hf.create_dataset('Side', data=MTside)
             
             if args.stl:
-                create_stl(surf_pc, f'{volumes}{s}_{MTside}_MT{MTno}.stl')
+                dir_ = f'{volumes}{MTside}/MT{MTno}/{sample_dir}'
+                os.makedirs(dir_, exist_ok=True)
+                create_stl(surf_pc, f'{dir_}/{s}_{MTside}_MT{MTno}.stl')
             
             print(f'{s}/{MTname} complete.')
 
