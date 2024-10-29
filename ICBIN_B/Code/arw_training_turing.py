@@ -222,42 +222,42 @@ def train_autoencoder(training_inputs, network, epochs, learning_rate, wtdecay,
 
 def train_vae(training_inputs, network, epochs, learning_rate, wtdecay,
               batch_size, loss_function, print_interval, device, num_points=1024, cycles=1):
+    
     dataset = MTDataset(training_inputs, num_points)
     train_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, collate_fn=custom_collate)
     optimizer = optim.Adam(network.parameters(), lr=learning_rate, weight_decay=wtdecay)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer,'min')
-    
-    end_time = float('inf')
-    if epochs < 0:
-        end_time = -epochs
-        epochs = int(1e9)
-        
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min')
+
+    max_duration = abs(epochs) if epochs < 0 else None
+    epochs = int(1e9) if epochs < 0 else epochs
+
     track_losses = []
     start = time.time()
-    print('Timer started')
     
     for epoch in range(1, epochs + 1):
         epoch_losses = []
         
-        for batch_idx, batch in enumerate(train_loader):
+        for batch in train_loader:
             batch_surf = batch['surf'].to(device)
             edge_index = batch['knn'].to(device)
-            encoded_X = batch_surf.clone().to(device)
+            encoded_X = batch_surf
             
+            # Encoding and decoding
             for _ in range(cycles):
                 encoded_X = network.encode(encoded_X, edge_index)
-                latent = encoded_X.clone()
-                encoded_X = network.decode(encoded_X, batch_surf.shape[1])
-                
-            mean = latent.mean(dim=2, keepdim=True)
-            std = latent.std(dim=2, keepdim=True) + 1e-6  # Small constant to avoid zero std deviation
+            latent = encoded_X.clone()
+            decoded_X = network.decode(latent, batch_surf.shape[1])
             
-            normal_dist = torch.distributions.Normal(mean[:, 0, 0], std[:, 0, 0])
-            std_normal = torch.distributions.Normal(0, 1)
-            loss_kl = torch.distributions.kl.kl_divergence(normal_dist, std_normal).mean()
+            # KL divergence loss
+            mean, std = latent.mean(dim=2, keepdim=True), latent.std(dim=2, keepdim=True) + 1e-6
+            kl_div = torch.distributions.kl.kl_divergence(
+                torch.distributions.Normal(mean, std),
+                torch.distributions.Normal(0, 1)
+            ).mean()
             
-            recon_loss = loss_function(batch_surf, encoded_X)
-            loss = recon_loss + (loss_kl * 100)
+            # Reconstruction loss
+            recon_loss = loss_function(batch_surf, decoded_X)
+            loss = recon_loss + kl_div * 100
             
             optimizer.zero_grad()
             loss.backward()
@@ -269,13 +269,14 @@ def train_vae(training_inputs, network, epochs, learning_rate, wtdecay,
         track_losses.append(training_loss.item())
         scheduler.step(training_loss)
         
-        if epoch % print_interval == 0 or time.time() - start > end_time:
-            elapsed_time = time.time() - start
-            print(f'Epoch: {epoch:4d}, Training Loss: {training_loss:10.3e}, Time: {elapsed_time:7.1f}s')
+        # Printing and time-based stopping
+        if epoch % print_interval == 0 or (max_duration and time.time() - start > max_duration):
+            klrecon = 100*kl_div/recon_loss
+            print(f'Epoch: {epoch:4d}, Loss: {training_loss:.3e}, KL/recon %: {klrecon:.1f}, Time: {time.time() - start:.1f}s')
         
-        if time.time() - start > end_time:
+        if max_duration and time.time() - start > max_duration:
             break
-        
+    
     return network, track_losses
 
 def train_diffusion(training_inputs, network, epochs, learning_rate, wtdecay,
@@ -423,7 +424,7 @@ def model_eval_chamfer(x, model, num_nodes, device, batch_size=10):
             jsd_loser = JSD_Loss()
             jensen_shannon_divergences.append(jsd_loser(b, rec))
         
-        avg_chamfer_loss = sum(chamfer_losses) / len(chamfer_losses)
+        avg_chamfer_loss = torch.sqrt(torch.tensor(chamfer_losses).mean())
         avg_jsd = sum(jensen_shannon_divergences) / len(chamfer_losses)
         
-    return avg_chamfer_loss, avg_jsd
+    return avg_chamfer_loss.item(), avg_jsd

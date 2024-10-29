@@ -7,6 +7,7 @@ v3.0
 """
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 class tet10_encoder(nn.Module):
     def __init__(self, hidden_size=16, num_layers=1, bidirectional=False):
@@ -46,7 +47,41 @@ class tet10_encoder(nn.Module):
         
         output = self.fc1(output)
     
-        return output
+        return output, lengths
+    
+class tet10_decoder(nn.Module):
+    def __init__(self, hidden_size=16, max_points=1024):
+        super(tet10_decoder, self).__init__()
+        
+        self.decode_codeword = nn.Sequential(
+            nn.Linear(hidden_size, hidden_size * 2),
+            nn.SiLU(),
+            nn.Linear(hidden_size * 2, hidden_size * 4),
+            nn.SiLU(),
+            nn.Linear(hidden_size * 4, max_points)
+        )
+        
+        self.decode_points = nn.Sequential(
+            nn.Linear(1, 4),
+            nn.SiLU(),
+            nn.Linear(4, 8),
+            nn.SiLU(),
+            nn.Linear(8, 16),
+            nn.SiLU(),
+            nn.Linear(16, 31)
+        )
+        
+        self.sig = nn.Sigmoid()
+
+    def forward(self, x, elems):
+        x = self.decode_codeword(x).unsqueeze(-1)        
+        x = self.decode_points(x)
+        cortical = self.sig(x[:, :, -1])
+        x = torch.cat((x[:, :, :-1], cortical.unsqueeze(-1)), dim=-1)
+
+        # Resample to [batch_size, elems, 31]
+        x = F.interpolate(x, size=(elems, 31), mode='linear', align_corners=False)
+        return x
     
 class tet10_densify(nn.Module):
     def __init__(self, codeword_size=16):

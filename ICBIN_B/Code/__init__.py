@@ -89,6 +89,12 @@ def compute_knn_graph(positions, k=16):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--direct', type=str,default='')
+    
+    parser.add_argument('-a','--autoencode', action='store_true')
+    parser.add_argument('--vae', action='store_true')
+    parser.add_argument('-d','--diffuse', action='store_true')
+    parser.add_argument('-g','--gan', action='store_true')
+    
     parser.add_argument('--seed', type=int,default=0)
     parser.add_argument('-e','--epochs', type=int,default=0)
     parser.add_argument('-t','--traintime', type=int,default=10)
@@ -113,31 +119,27 @@ if __name__ == "__main__":
     parser.add_argument('--loaddis', type=str,default='')
     parser.add_argument('--cycles', type=int, default=1)
     parser.add_argument('--numpoints', type=int,default=512)
-    parser.add_argument('-d','--diffuse', action='store_true')
-    parser.add_argument('-g','--gan', action='store_true')
-    parser.add_argument('-a','--autoencode', action='store_true')
-    parser.add_argument('--vae', action='store_true')
     parser.add_argument('-v','--visual', action='store_true')
-    parser.add_argument('-p','--pretrain', action='store_true')
     parser.add_argument('-n','--network', type=str, choices=['trs', 'fold', 'mlp'],
                         help='Network call sign')
     
     args = parser.parse_args(['--direct','../','-n','trs',
                               '-v',
+                              '-a',
+                              '-g',
                               #'--grow',
                               #'--grow_thresh','0.9',
                               '-i','1',# 3 different layer combos
-                              '-d',
                               '--batch','64',
-                              '-lr','1e-4','--decay','1e-5',
+                              '-lr','1e-3','--decay','1e-7',
                               '-e','0',
-                              '-t','600',
+                              '-t','60',
                               '--pint','1',
                               '--chpt','0',
                               '--cycles','1',
-                              '--noise','3',
+                              '--noise','2',
                               '--name','trs',
-                              '--loadgen','ae_trs_256_128_256_0',
+                              '--loadgen','diff_trs_256_128_256',
                               '--loadclass','',
                               '--loaddis',''])
                     
@@ -272,12 +274,13 @@ if __name__ == "__main__":
         set_point_cloud_color(point_cloud, gray_value=0.5)
         o3d.visualization.draw_geometries([point_cloud])
         
-        # Fake point cloud
+        # Reconstructed
         point_cloud = o3d.geometry.PointCloud()
         point_cloud.points = o3d.utility.Vector3dVector(fake.squeeze(0))
         set_point_cloud_color(point_cloud, gray_value=0.4)
         o3d.visualization.draw_geometries([point_cloud])
         
+        # Fake
         noise = torch.randn(test.shape[0], 1, test.shape[2], device=device)
         with torch.no_grad():
             fake = network.decode(noise, num_points)
@@ -321,7 +324,6 @@ if __name__ == "__main__":
                 table = [["Metric", "Value"],
                          ["Chamfer Loss", f'{chf_loss:.3f}'],
                          ["JSD Loss", f'{jsd:.3f}'],
-                         #["Classifier Loss", f"{class_loss_}"],
                          ["Epochs", f'{epochs}'],
                          ["Learn Rate", f'{learning_rate}'],
                          ["Decay", f'{args.decay}'],
@@ -447,3 +449,4 @@ if __name__ == "__main__":
         filename = f'{args.direct}Metrics/gangen_{model_name}.txt'
         with open(filename, 'w', encoding='utf-8') as file:
             file.write(tabulate(table, headers="firstrow", tablefmt="fancy_grid", numalign="right"))
+            
