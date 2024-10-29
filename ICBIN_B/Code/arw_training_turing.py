@@ -9,48 +9,45 @@
 # =============================================================================
 import torch
 from torch import nn
-from sklearn.metrics import mean_absolute_error, r2_score, mean_squared_error
 import numpy as np
 import time
 import h5py
 from torch.utils.data import DataLoader, Dataset
-from torch.nn.utils.rnn import pad_sequence
 import torch.nn.functional as F
 import torch.optim as optim
 from sklearn.neighbors import NearestNeighbors
 #%% Loss Functions
 class Chamfer_Loss(nn.Module):
-    def __init__(self):
-        super(Chamfer_Loss, self).__init__()        
+    def __init__(self, clip_threshold=1.0):
+        super(Chamfer_Loss, self).__init__()
+        self.clip_threshold = clip_threshold
+
     def forward(self, inputs, preds):
-        
         return self.compute_chamfer_loss(inputs, preds)
                 
     def compute_chamfer_loss(self, inputs, preds):
-        
-        loss = self.compute_loss(inputs, preds)
-        
-        return loss
+        return self.compute_loss(inputs, preds)
     
     def clip_gradients(self):
-        # Iterate through all parameters
+        # Iterate through all parameters and clip gradients
         for param in self.parameters():
             if param.grad is not None:
                 nn.utils.clip_grad_norm_(param, self.clip_threshold)
 
     def compute_loss(self, cloud1, cloud2):
-        # Compute squared Euclidean distances using broadcasting and vectorized operations
+        # Compute squared Euclidean distances using broadcasting
         diff = cloud1.unsqueeze(2) - cloud2.unsqueeze(1)  # Shape: (batch_size, num_points_cloud1, num_points_cloud2, 3)
         distances_squared = torch.sum(diff ** 2, dim=-1)  # Shape: (batch_size, num_points_cloud1, num_points_cloud2)
         
-        # Find the mean minimum distance along the second and third dimension
-        min_distances1, _ = torch.min(distances_squared, dim=1)
-        min_distances2, _ = torch.min(distances_squared, dim=2)
-        min1 = torch.mean(min_distances1) + torch.max(min_distances1)
-        min2 = torch.mean(min_distances2) + torch.max(min_distances2)
+        # Find the mean minimum distance along the second and third dimensions
+        min_distances1, _ = torch.min(distances_squared, dim=2)  # Shape: (batch_size, num_points_cloud1)
+        min_distances2, _ = torch.min(distances_squared, dim=1)  # Shape: (batch_size, num_points_cloud2)
         
-        # Take the max
-        return max(min1, min2)
+        # Compute the Chamfer loss as the sum of mean minimum distances
+        mean1 = torch.mean(min_distances1)
+        mean2 = torch.mean(min_distances2)
+        
+        return max(mean1,mean2)
 
 class GAN_Loss(nn.Module):
     def __init__(self):
@@ -63,7 +60,7 @@ class GAN_Loss(nn.Module):
         # If predicted point cloud and target point cloud are provided, compute KL divergence loss
         if pred_cloud is not None and tgt_cloud is not None:
             loss_cloud = Chamfer_Loss.compute_loss(self,pred_cloud, tgt_cloud)
-            loss *= loss_cloud
+            loss += loss_cloud/100
         
         return loss
     
@@ -176,6 +173,7 @@ def train_autoencoder(training_inputs, network, epochs, learning_rate, wtdecay,
     dataset = MTDataset(training_inputs, num_points)
     train_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, collate_fn=custom_collate)
     optimizer = optim.Adam(network.parameters(), lr=learning_rate, weight_decay=wtdecay)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer,'min')
     
     end_time = float('inf')
     if epochs < 0:
@@ -187,6 +185,8 @@ def train_autoencoder(training_inputs, network, epochs, learning_rate, wtdecay,
     print('Timer started')
     
     for epoch in range(1, epochs + 1):
+        epoch_losses = []
+        
         for batch_idx, batch in enumerate(train_loader):
             batch_surf = batch['surf'].to(device)
             edge_index = batch['knn'].to(device)
@@ -201,8 +201,13 @@ def train_autoencoder(training_inputs, network, epochs, learning_rate, wtdecay,
             loss.backward()
             optimizer.step()
             
-        training_loss = loss.sqrt()
+            # Store batch loss for epoch aggregation
+            epoch_losses.append(loss.item())
+        
+        # Compute average epoch loss
+        training_loss = torch.mean(torch.tensor(epoch_losses))
         track_losses.append(training_loss.item())
+        scheduler.step(training_loss)
         
         if epoch % print_interval == 0:
             elapsed_time = time.time() - start
@@ -213,14 +218,14 @@ def train_autoencoder(training_inputs, network, epochs, learning_rate, wtdecay,
             print(f'Epoch: {epoch:4d}, Training Loss: {training_loss:10.3e}, Time: {elapsed_time:7.1f}s')
             break
         
-    return network, track_losses
+    return network, epoch_losses
 
 def train_vae(training_inputs, network, epochs, learning_rate, wtdecay,
-              batch_size, loss_function, print_interval, device, num_points=1024,cycles=1):
-    
+              batch_size, loss_function, print_interval, device, num_points=1024, cycles=1):
     dataset = MTDataset(training_inputs, num_points)
     train_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, collate_fn=custom_collate)
     optimizer = optim.Adam(network.parameters(), lr=learning_rate, weight_decay=wtdecay)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer,'min')
     
     end_time = float('inf')
     if epochs < 0:
@@ -232,6 +237,8 @@ def train_vae(training_inputs, network, epochs, learning_rate, wtdecay,
     print('Timer started')
     
     for epoch in range(1, epochs + 1):
+        epoch_losses = []
+        
         for batch_idx, batch in enumerate(train_loader):
             batch_surf = batch['surf'].to(device)
             edge_index = batch['knn'].to(device)
@@ -243,36 +250,30 @@ def train_vae(training_inputs, network, epochs, learning_rate, wtdecay,
                 encoded_X = network.decode(encoded_X, batch_surf.shape[1])
                 
             mean = latent.mean(dim=2, keepdim=True)
-            std = latent.std(dim=2, keepdim=True)
-            
-            # Create a normal distribution for each feature
-            epsilon = 1e-6  # Small constant to avoid zero std deviation
-            std = latent.std(dim=2, keepdim=True) + epsilon
+            std = latent.std(dim=2, keepdim=True) + 1e-6  # Small constant to avoid zero std deviation
             
             normal_dist = torch.distributions.Normal(mean[:, 0, 0], std[:, 0, 0])
-            
-            std_normal = torch.distributions.Normal(0,1)
-            
+            std_normal = torch.distributions.Normal(0, 1)
             loss_kl = torch.distributions.kl.kl_divergence(normal_dist, std_normal).mean()
             
             recon_loss = loss_function(batch_surf, encoded_X)
-            
-            loss = recon_loss + (loss_kl*100)
+            loss = recon_loss + (loss_kl * 100)
             
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
             
-        training_loss = loss.sqrt()
-        track_losses.append(training_loss.item())
+            epoch_losses.append(loss.item())
         
-        if epoch % print_interval == 0:
+        training_loss = torch.sqrt(torch.tensor(epoch_losses).mean())
+        track_losses.append(training_loss.item())
+        scheduler.step(training_loss)
+        
+        if epoch % print_interval == 0 or time.time() - start > end_time:
             elapsed_time = time.time() - start
             print(f'Epoch: {epoch:4d}, Training Loss: {training_loss:10.3e}, Time: {elapsed_time:7.1f}s')
         
         if time.time() - start > end_time:
-            elapsed_time = time.time() - start
-            print(f'Epoch: {epoch:4d}, Training Loss: {training_loss:10.3e}, Time: {elapsed_time:7.1f}s')
             break
         
     return network, track_losses
@@ -282,6 +283,7 @@ def train_diffusion(training_inputs, network, epochs, learning_rate, wtdecay,
     dataset = MTDataset(training_inputs, num_points)
     train_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, collate_fn=custom_collate)
     optimizer = optim.Adam(network.parameters(), lr=learning_rate, weight_decay=wtdecay)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer,'min')
     
     end_time = float('inf')
     if epochs < 0:
@@ -293,46 +295,45 @@ def train_diffusion(training_inputs, network, epochs, learning_rate, wtdecay,
     print('Timer started')
     
     for epoch in range(1, epochs + 1):
+        epoch_losses = []
+        
         for batch_idx, batch in enumerate(train_loader):
             batch_surf = batch['surf'].to(device)
             edge_index = batch['knn'].to(device)
             encoded_X = batch_surf.clone().to(device)
             
-            lamb_t = max(min(noise_level/10, 1), 0.05)
+            lamb_t = max(min(noise_level / 10, 1), 0.05)
             sig_t = 1 - lamb_t
-                
-            encoded_X = network.encode(encoded_X, edge_index)
             
-            # Diffusion process
+            encoded_X = network.encode(encoded_X, edge_index)
             
             noise = torch.randn_like(encoded_X).to(device)
             noisy = sig_t * encoded_X + lamb_t * noise
             
             encoded_X = network.decode(noisy, batch_surf.shape[1])
-            
-            # Final output
             loss = loss_function(batch_surf, encoded_X)
             
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
             
-        training_loss = loss.item()**0.5
-        track_losses.append(training_loss)
+            epoch_losses.append(loss.item())
+        
+        training_loss = torch.sqrt(torch.tensor(epoch_losses).mean())
+        track_losses.append(training_loss.item())
+        scheduler.step(training_loss)
+        if epoch % print_interval == 0 or time.time() - start > end_time:
+            elapsed_time = time.time() - start
+            print(f'Epoch: {epoch:4d}, Training Loss: {training_loss:10.3e}, Time: {elapsed_time:7.1f}s')
         
         if time.time() - start > end_time:
-            print(f'Epoch: {epoch:4d}, Training Loss: {training_loss:10.3e}, Time: {time.time() - start:7.1f}s')
             break
-        
-        if epoch % print_interval == 0:
-            print(f'Epoch: {epoch:4d}, Training Loss: {training_loss:10.3e}, Time: {time.time() - start:7.1f}s')
         
     return network, track_losses
 
 # GAN training function
 def train_GD(training_inputs, Gnet, Dnet, dec_hid, epochs, learning_rate, decay,
              batch_size, loss_function, print_interval, device, num_points=1024):
-    
     dataset = MTDataset(training_inputs, num_points)
     train_loader = DataLoader(dataset, batch_size=batch_size, num_workers=4, shuffle=True, collate_fn=custom_collate)
     
@@ -361,41 +362,28 @@ def train_GD(training_inputs, Gnet, Dnet, dec_hid, epochs, learning_rate, decay,
             b_size = len(data)
             label = torch.full((b_size,), 1, dtype=torch.float, device=device)
             
-            # Train with real data
+            # Train Discriminator with real data
             output = Dnet(data).view(-1)
             lossD_real = loss_function(output, label)
-            
             optimizerD.zero_grad()
             lossD_real.backward()
             optimizerD.step()
-            
-            D_x = output.mean().item()  # 1 if discriminator is doing well
-            
+            # Train Discriminator with fake data
             b = Gnet.encode(data, edge_index)
-            
             noise = torch.randn(b_size, b.shape[1], b.shape[2], device=device)
             fake = Gnet.decode(noise, data.shape[1])
-            
             label.fill_(0)
             output = Dnet(fake).view(-1)
-            
-            D_G_z1 = output.mean().item()  # 0 if discriminator is doing well
-            
-            lossD_fake = loss_function(output, label)  # Closer to 1 means generator is fooling
-            
+            lossD_fake = loss_function(output, label)
             optimizerD.zero_grad()
             lossD_fake.backward()
             optimizerD.step()
             
-            output = Dnet(fake).view(-1)
-            D_G_z2 = output.mean().item()  # 0 if discriminator is doing well
-            
-            # Update generator
-            fake = Gnet.decode(noise,data.shape[1])
+            # Train Generator
+            fake = Gnet.decode(noise, data.shape[1])
             label.fill_(1)
             output = Dnet(fake).view(-1)
             lossG = loss_function(output, label, fake, data)
-            
             optimizerG.zero_grad()
             lossG.backward()
             optimizerG.step()
@@ -404,39 +392,36 @@ def train_GD(training_inputs, Gnet, Dnet, dec_hid, epochs, learning_rate, decay,
             lossD = lossD_real + lossD_fake
             G_losses.append(lossG.item())
             D_losses.append(lossD.item())
-        
-        if epoch % print_interval == 0:
-            print('[%d][%d]\tLoss_D: %.4f\tLoss_G: %.4f\tD(x): %.4f\tD(G(z)): %.4f / %.4f' % 
-                  (epoch, time.time() - start, lossD.item(), lossG.item(), D_x, D_G_z1, D_G_z2))
+        if epoch % print_interval == 0 or time.time() - start > end_time:
+            elapsed_time = time.time() - start
+            print(f'Epoch: {epoch:4d}, Loss_D: {lossD.item():.4f}, Loss_G: {lossG.item():.4f}, Time: {elapsed_time:7.1f}s')
         
         if time.time() - start > end_time:
-            print('[%d][%d]\tLoss_D: %.4f\tLoss_G: %.4f\tD(x): %.4f\tD(G(z)): %.4f / %.4f' % 
-                  (epoch, time.time() - start, lossD.item(), lossG.item(), D_x, D_G_z1, D_G_z2))
             break
     
     return Gnet, G_losses, Dnet, D_losses
 
 def model_eval_chamfer(x, model, num_nodes, device, batch_size=10):
     ds = MTDataset(x, num_nodes)
-    loader = DataLoader(ds,batch_size=batch_size,num_workers=4,shuffle=False,collate_fn=custom_collate)
+    loader = DataLoader(ds, batch_size=batch_size, num_workers=4, shuffle=False, collate_fn=custom_collate)
     
+    chamfer_loss_fn = Chamfer_Loss()
     chamfer_losses = []
     jensen_shannon_divergences = []
+    
     with torch.no_grad():
         for X in loader:
             b = X['surf'].to(device)
             k = X['knn'].to(device)
-            encoded_tensor = model.encode(b,k)
+            encoded_tensor = model.encode(b, k)
             
             rec = model.decode(encoded_tensor, num_nodes)
             
-            dist_x_to_y = torch.cdist(b.view(-1, 3), rec.view(-1, 3))
-            dist_y_to_x = torch.cdist(rec.view(-1, 3), b.view(-1, 3))
-            chamfer_loss = dist_x_to_y.min(dim=1).values.mean() + dist_y_to_x.min(dim=1).values.mean()
+            chamfer_loss = chamfer_loss_fn(b, rec)
             chamfer_losses.append(chamfer_loss.item())
             
             jsd_loser = JSD_Loss()
-            jensen_shannon_divergences.append(jsd_loser(b,rec))
+            jensen_shannon_divergences.append(jsd_loser(b, rec))
         
         avg_chamfer_loss = sum(chamfer_losses) / len(chamfer_losses)
         avg_jsd = sum(jensen_shannon_divergences) / len(chamfer_losses)

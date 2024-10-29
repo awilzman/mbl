@@ -16,7 +16,15 @@ import networks
 from tabulate import tabulate
 from sklearn.neighbors import NearestNeighbors
 
-
+def save_losses_h5(data_dir, model_name, loop, losses):
+    # Ensure directory exists
+    os.makedirs(data_dir, exist_ok=True)
+    
+    loss_data_path = f'{data_dir}ae_{model_name}_{loop}_losses.h5'
+    with h5py.File(loss_data_path, 'w') as f:
+        f.create_dataset('losses', data=losses)
+    print(f'Loss data saved as: {loss_data_path}')
+    
 def extract_state_lists(state_dict, layer_prefixes):
     state_lists = []
 
@@ -96,15 +104,15 @@ if __name__ == "__main__":
     parser.add_argument('--eval_bs', type=int, default=8, help='eval batch size')
     parser.add_argument('--pint', type=int,default=0)
     parser.add_argument('--noise', type=int,default=3)
-    parser.add_argument('--hidden1', type=int,default=512)
+    parser.add_argument('--hidden1', type=int,default=256)
     parser.add_argument('--hidden2', type=int,default=128)
-    parser.add_argument('--hidden3', type=int,default=1024)
+    parser.add_argument('--hidden3', type=int,default=256)
     parser.add_argument('--name', type=str,default='')
     parser.add_argument('--loadgen', type=str,default='')
     parser.add_argument('--loadclass', type=str,default='')
     parser.add_argument('--loaddis', type=str,default='')
     parser.add_argument('--cycles', type=int, default=1)
-    parser.add_argument('--numpoints', type=int,default=2048)
+    parser.add_argument('--numpoints', type=int,default=512)
     parser.add_argument('-d','--diffuse', action='store_true')
     parser.add_argument('-g','--gan', action='store_true')
     parser.add_argument('-a','--autoencode', action='store_true')
@@ -114,21 +122,22 @@ if __name__ == "__main__":
     parser.add_argument('-n','--network', type=str, choices=['trs', 'fold', 'mlp'],
                         help='Network call sign')
     
-    args = parser.parse_args(['--direct','../','-n','fold',
-                              '-a',
+    args = parser.parse_args(['--direct','../','-n','trs',
+                              '-v',
                               #'--grow',
-                              '--grow_thresh','0.9',
-                              '-i','2',
-                              '-a',
+                              #'--grow_thresh','0.9',
+                              '-i','1',# 3 different layer combos
+                              '-d',
+                              '--batch','64',
                               '-lr','1e-4','--decay','1e-5',
                               '-e','0',
                               '-t','600',
                               '--pint','1',
                               '--chpt','0',
                               '--cycles','1',
-                              '--noise','5',
-                              '--name','',
-                              '--loadgen','',
+                              '--noise','3',
+                              '--name','trs',
+                              '--loadgen','ae_trs_256_128_256_0',
                               '--loadclass','',
                               '--loaddis',''])
                     
@@ -218,12 +227,12 @@ if __name__ == "__main__":
                      [(args.hidden1+3,3)]]
         elif args.init == 2:
             state = [[(input_dim,64),(64,args.hidden3)],
-                     [(input2_dim,args.hidden1*2),(args.hidden1*2,args.hidden1)],
+                     [(input2_dim,args.hidden1//4),(args.hidden1//4,args.hidden1)],
                      [(args.hidden1+2,args.hidden3),(args.hidden3,3)],
                      [(args.hidden1+3,args.hidden3),(args.hidden3,3)]]
         elif args.init == 3:
-            state = [[(input_dim,64),(64,128),(128,256),(256,args.hidden3)],
-                     [(input2_dim,args.hidden1*4),(args.hidden1*4,args.hidden1*2),(args.hidden1*2,args.hidden1),(args.hidden1,args.hidden1)],
+            state = [[(input_dim,64),(64,64),(64,args.hidden3)],
+                     [(input2_dim,args.hidden1//4),(args.hidden1//4,args.hidden1//2),(args.hidden1//2,args.hidden1),(args.hidden1,args.hidden1)],
                      [(args.hidden1+2,args.hidden3),(args.hidden3,args.hidden3//2),(args.hidden3//2,args.hidden3//16),(args.hidden3//16,3)],
                      [(args.hidden1+3,args.hidden3),(args.hidden3,args.hidden3//2),(args.hidden3//2,args.hidden3//16),(args.hidden3//16,3)]]
     else:
@@ -264,19 +273,19 @@ if __name__ == "__main__":
         o3d.visualization.draw_geometries([point_cloud])
         
         # Fake point cloud
+        point_cloud = o3d.geometry.PointCloud()
         point_cloud.points = o3d.utility.Vector3dVector(fake.squeeze(0))
         set_point_cloud_color(point_cloud, gray_value=0.4)
         o3d.visualization.draw_geometries([point_cloud])
         
-        for i in range(2):
-            noise = torch.randn(test.shape[0], 1, test.shape[2], device=device)
-            with torch.no_grad():
-                fake = network.decode(noise, num_points)
-            fake = fake.cpu().detach().numpy()
-            point_cloud = o3d.geometry.PointCloud()
-            point_cloud.points = o3d.utility.Vector3dVector(fake.squeeze(0))
-            set_point_cloud_color(point_cloud, gray_value=0.3)
-            o3d.visualization.draw_geometries([point_cloud])
+        noise = torch.randn(test.shape[0], 1, test.shape[2], device=device)
+        with torch.no_grad():
+            fake = network.decode(noise, num_points)
+        fake = fake.cpu().detach().numpy()
+        point_cloud = o3d.geometry.PointCloud()
+        point_cloud.points = o3d.utility.Vector3dVector(fake.squeeze(0))
+        set_point_cloud_color(point_cloud, gray_value=0.3)
+        o3d.visualization.draw_geometries([point_cloud])
         
     if args.grow:
         perc_thresh = int(args.grow_thresh*100)
@@ -297,6 +306,9 @@ if __name__ == "__main__":
                 network,losses = trn.train_autoencoder(
                     data,network,epochs,learning_rate,wtdecay,batch_size,
                     loss_function,print_interval,device,num_points,cycles)
+                
+                loss_file = f'{args.direct}Metrics/'
+                save_losses_h5(loss_file, model_name, loop, losses)
                 
                 # save networks                
                 torch.save(network.state_dict(),f'{args.direct}Models/ae_{model_name}_{loop}.pth')
