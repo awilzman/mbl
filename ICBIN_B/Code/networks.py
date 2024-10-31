@@ -182,19 +182,22 @@ class arw_FoldingNet(nn.Module):
         return x
 
     def decode(self, x, num_nodes):
-        b = x.shape[0]
+        b,c = x.shape
         
         # repeat grid for batch operation
         grid = self.grid.to(x.device)                      # (2, 45 * 45)
         grid = grid.unsqueeze(0).repeat(b, 1, 1)  # (B, 2, 45 * 45)
-        
+        n = 45**2
         # repeat codewords
         x = x.unsqueeze(2).repeat(1, 1, self.m)            # (B, 512, 45 * 45)
         
         # two folding operations
         recon1 = self.fold1(grid, x)
         recon2 = self.fold2(recon1, x)
-        return recon2.permute(0,2,1)
+        rand_ind = torch.randperm(n)[:num_nodes]
+        recon2 = recon2.permute(0,2,1)[:,rand_ind,:]
+        
+        return recon2
     
 def knn(x, k):
     """

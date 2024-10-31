@@ -97,7 +97,7 @@ if __name__ == "__main__":
     parser.add_argument('--eval_bs', type=int, default=8, help='eval batch size')
     parser.add_argument('--pint', type=int,default=0)
     parser.add_argument('--noise', type=int,default=3)
-    parser.add_argument('--hidden1', type=int,default=128)
+    parser.add_argument('--hidden1', type=int,default=512)
     parser.add_argument('--hidden2', type=int,default=128)
     parser.add_argument('--hidden3', type=int,default=64)
     
@@ -113,22 +113,23 @@ if __name__ == "__main__":
                         help='Network call sign')
     
     args = parser.parse_args(['--direct','../','-n','fold',
-                              #'-v',
-                              '--vae',
+                              '-v',
+                              '-a',
+                              '-g',
                               #'--grow',
                               #'--grow_thresh','0.9',
                               '-i','1',# 3 different layer start combos
-                              '--batch','4',
-                              '-lr','1e-2','--decay','1e-5',
+                              '--batch','32',
+                              '-lr','1e-3','--decay','1e-6',
                               '-e','0',
-                              '-t','12',
+                              '-t','120',
                               '--pint','1',
                               '--chpt','0',
                               '--cycles','2',
                               '--noise','3',
                               '--name','fold',
                               '--pc_gen','0',
-                              '--loadgen','ae_fold_128_128_64_0',
+                              '--loadgen','gangen_fold_512_128_64',
                               '--loaddis',''])
                     
     #Initialize vars
@@ -276,7 +277,7 @@ if __name__ == "__main__":
         o3d.visualization.draw_geometries([point_cloud])
         
         if args.pc_gen > 0:
-            noise = torch.randn(args.pc_gen, 1, test.shape[1], device=device)
+            noise = torch.randn(args.pc_gen, test.shape[1], device=device)
             with torch.no_grad():
                 fake = network.decode(noise, num_points)
             fake = fake.cpu().detach().numpy()
@@ -289,7 +290,7 @@ if __name__ == "__main__":
                 points, _ = pch.inc_PCA(points)
                 pch.create_stl(points,
                                f'{args.direct}Data/Generated/{args.loadgen[:-4]}_{i}.stl',
-                               8)
+                               32)
                 
     if args.grow:
         perc_thresh = int(args.grow_thresh*100)

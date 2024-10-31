@@ -319,10 +319,8 @@ def train_GD(training_inputs, Gnet, Dnet, dec_hid, epochs, learning_rate, decay,
                           list(Gnet.trs_decoder.parameters()) + 
                           list(Gnet.d_layers2.parameters()))
     elif 'fold' in Gnet.__class__.__name__.lower():
-        decoder_params = (list(Gnet.d_layers1.parameters()) + 
-                          list(Gnet.d_bn1.parameters()) + 
-                          list(Gnet.d_layers2.parameters()) + 
-                          list(Gnet.d_bn2.parameters()))
+        decoder_params = (list(Gnet.fold1.parameters()) + 
+                          list(Gnet.fold2.parameters()))
     elif 'mlp' in Gnet.__class__.__name__.lower():
         decoder_params = (list(Gnet.d_layers1.parameters()) + 
                           list(Gnet.d_layers2.parameters()))
@@ -347,8 +345,7 @@ def train_GD(training_inputs, Gnet, Dnet, dec_hid, epochs, learning_rate, decay,
         
         for batch in train_loader:
             data = batch['surf'].to(device)
-            edge_index = batch['knn'].to(device)
-            encoded = Gnet.encode(data,edge_index)
+            encoded = Gnet.encode(data)
             real_decoded = Gnet.decode(encoded,num_points)
             
             b_size = data.size(0)
@@ -359,7 +356,7 @@ def train_GD(training_inputs, Gnet, Dnet, dec_hid, epochs, learning_rate, decay,
             lossD_real = loss_function(output_real, label_real)
             
             # Train Discriminator with fake data
-            noise = torch.randn(b_size, 1, dec_hid, device=device)
+            noise = torch.randn(b_size, dec_hid, device=device)
             fake = Gnet.decode(noise, num_points)
             label_fake = torch.zeros(b_size, device=device)
             output_fake = Dnet(fake.detach()).view(-1)
