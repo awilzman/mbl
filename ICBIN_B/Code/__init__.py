@@ -14,7 +14,6 @@ import torch
 import arw_training_turing as trn
 import networks
 from tabulate import tabulate
-from sklearn.neighbors import NearestNeighbors
 
 def save_losses_h5(data_dir, model_name, loop, losses):
     # Ensure directory exists
@@ -73,18 +72,6 @@ def grow_network(network, losses, thresh_scale=0.8, width_scale=0.2):
         
     return network
 
-def compute_knn_graph(positions, k=16):
-    neighbors = NearestNeighbors(n_neighbors=k+1).fit(positions)
-    distances, indices = neighbors.kneighbors(positions)
-    edge_index = []
-    
-    for i in range(positions.shape[0]):
-        for j in range(1, k+1):  # Start from 1 to skip the point itself
-            edge_index.append([i, indices[i, j]])
-    
-    edge_index = torch.tensor(edge_index, dtype=torch.long).t().contiguous()
-    return edge_index
-
 #Z:/_PROJECTS/Deep_Learning_HRpQCT/ICBIN_B/
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -110,45 +97,44 @@ if __name__ == "__main__":
     parser.add_argument('--eval_bs', type=int, default=8, help='eval batch size')
     parser.add_argument('--pint', type=int,default=0)
     parser.add_argument('--noise', type=int,default=3)
-    parser.add_argument('--hidden1', type=int,default=1024)
+    parser.add_argument('--hidden1', type=int,default=128)
     parser.add_argument('--hidden2', type=int,default=128)
-    parser.add_argument('--hidden3', type=int,default=512)
+    parser.add_argument('--hidden3', type=int,default=64)
+    
     parser.add_argument('--name', type=str,default='')
     parser.add_argument('--loadgen', type=str,default='')
-    parser.add_argument('--loadclass', type=str,default='')
     parser.add_argument('--loaddis', type=str,default='')
+    parser.add_argument('--pc_gen', type=int,default=0)
+    
     parser.add_argument('--cycles', type=int, default=1)
     parser.add_argument('--numpoints', type=int,default=512)
     parser.add_argument('-v','--visual', action='store_true')
     parser.add_argument('-n','--network', type=str, choices=['trs', 'fold', 'mlp'],
                         help='Network call sign')
     
-    args = parser.parse_args(['--direct','../','-n','trs',
-                              '-v',
-                              '-g',
+    args = parser.parse_args(['--direct','../','-n','fold',
+                              #'-v',
+                              '--vae',
                               #'--grow',
                               #'--grow_thresh','0.9',
-                              '-i','1',# 3 different layer combos
-                              '--batch','64',
-                              '-lr','1e-3','--decay','1e-7',
+                              '-i','1',# 3 different layer start combos
+                              '--batch','4',
+                              '-lr','1e-2','--decay','1e-5',
                               '-e','0',
-                              '-t','600',
+                              '-t','12',
                               '--pint','1',
                               '--chpt','0',
-                              '--cycles','1',
-                              '--noise','2',
-                              '--name','trs',
-                              '--loadgen','ae_large_trs3_1_1024_128_512_0',
-                              '--loadclass','',
+                              '--cycles','2',
+                              '--noise','3',
+                              '--name','fold',
+                              '--pc_gen','0',
+                              '--loadgen','ae_fold_128_128_64_0',
                               '--loaddis',''])
                     
     #Initialize vars
     if args.loadgen != '':
         if args.loadgen[-4:] != '.pth': # must be .pth
             args.loadgen += '.pth'
-    if args.loadclass != '':
-        if args.loadclass[-4:] != '.pth': # must be .pth
-            args.loadclass += '.pth'
     if args.seed == 0:
         args.seed = torch.randint(10, 8545, (1,)).item() 
     num_points = args.numpoints
@@ -242,7 +228,7 @@ if __name__ == "__main__":
     if args.network == 'trs':
         network = networks.arw_TRSNet(args.hidden1,args.hidden3,state).to(device)
     elif args.network == 'fold':
-        network = networks.arw_FoldingNet(args.hidden1,args.hidden3,state).to(device)
+        network = networks.arw_FoldingNet(args.hidden1,args.hidden3).to(device)
     elif args.network == 'mlp':
         network = networks.arw_MLPNet(args.hidden1,args.hidden3,state).to(device)
             
@@ -254,6 +240,8 @@ if __name__ == "__main__":
         
     if args.visual: #see example input 
         import open3d as o3d
+        import pointcloud_handler as pch
+        import pandas as pd
         def set_point_cloud_color(point_cloud, gray_value):
             # Ensure the color array matches the number of points
             gray_color = np.tile([gray_value, gray_value, gray_value], (len(point_cloud.points), 1))
@@ -261,13 +249,11 @@ if __name__ == "__main__":
         
         point_cloud = o3d.geometry.PointCloud()
         bonetest = torch.FloatTensor(bone).to(device)
-        bone_knn = compute_knn_graph(bone).to(device)
         
         with torch.no_grad():
-            test = network.encode(bonetest.unsqueeze(0), bone_knn)
+            test = network.encode(bonetest.unsqueeze(0))
             fake = network.decode(test, num_points)
-        fake = fake.cpu().detach().numpy()
-        
+            
         # Original bone point cloud
         point_cloud.points = o3d.utility.Vector3dVector(bonetest.cpu().detach().numpy())
         set_point_cloud_color(point_cloud, gray_value=0.5)
@@ -275,12 +261,12 @@ if __name__ == "__main__":
         
         # Reconstructed
         point_cloud = o3d.geometry.PointCloud()
-        point_cloud.points = o3d.utility.Vector3dVector(fake.squeeze(0))
+        point_cloud.points = o3d.utility.Vector3dVector(fake.cpu().detach().numpy().squeeze(0))
         set_point_cloud_color(point_cloud, gray_value=0.4)
         o3d.visualization.draw_geometries([point_cloud])
         
         # Fake
-        noise = torch.randn(test.shape[0], 1, test.shape[2], device=device)
+        noise = torch.randn(1, test.shape[1], device=device)
         with torch.no_grad():
             fake = network.decode(noise, num_points)
         fake = fake.cpu().detach().numpy()
@@ -289,6 +275,22 @@ if __name__ == "__main__":
         set_point_cloud_color(point_cloud, gray_value=0.3)
         o3d.visualization.draw_geometries([point_cloud])
         
+        if args.pc_gen > 0:
+            noise = torch.randn(args.pc_gen, 1, test.shape[1], device=device)
+            with torch.no_grad():
+                fake = network.decode(noise, num_points)
+            fake = fake.cpu().detach().numpy()
+     
+            # Save point clouds to CSV
+            for i in range(args.pc_gen):
+                # Flatten each generated point cloud (num_points, 3)
+                points = fake[i]
+                points = pd.DataFrame(points, columns=['x', 'y', 'z'])
+                points, _ = pch.inc_PCA(points)
+                pch.create_stl(points,
+                               f'{args.direct}Data/Generated/{args.loadgen[:-4]}_{i}.stl',
+                               8)
+                
     if args.grow:
         perc_thresh = int(args.grow_thresh*100)
         perc_width = int(args.grow_width*100)
@@ -422,7 +424,7 @@ if __name__ == "__main__":
                 args.loaddis += '.pth'
             Dnet.load_state_dict(torch.load(f'{args.direct}Models/{args.loaddis}'))
             
-        gnet,gloss,dnet,dloss = trn.train_GD(data,network,Dnet,args.hidden3,epochs,
+        gnet,gloss,dnet,dloss = trn.train_GD(data,network,Dnet,args.hidden1,epochs,
                                              learning_rate,wtdecay,batch_size,
                                              loss_function,print_interval,device)
         

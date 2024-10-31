@@ -7,7 +7,8 @@ Created on Thu Jan 18 16:03:37 2024
 
 import torch
 import torch.nn as nn
-from torch_geometric.nn import GCNConv
+import torch.nn.functional as F
+import numpy as np
     
 class jarvis(nn.Module): # Discriminator network
     def __init__(self, insize):
@@ -56,132 +57,183 @@ class jarvis(nn.Module): # Discriminator network
         y = self.fc_encoder2(y)
         x = y.permute(0,2,1)
         return x
+
+class GraphLayer(nn.Module):
+    """
+    Graph layer.
+
+    in_channel: it depends on the input of this network.
+    out_channel: given by ourselves.
+    """
+    def __init__(self, in_channel, out_channel, k=16):
+        super(GraphLayer, self).__init__()
+        self.k = k
+        self.conv = nn.Conv1d(in_channel, out_channel, 1)
+        self.bn = nn.BatchNorm1d(out_channel)
+
+    def forward(self, x):
+        """
+        Parameters
+        ----------
+            x: tensor with size of (B, N, C)
+        """
+        # KNN
+        knn_idx = knn(x, k=self.k)
+        knn_x = index_points(x, knn_idx)  # (B, N, k, C)
+
+        # Local Max Pooling
+        x = torch.max(knn_x, dim=2)[0]  # (B, N, C)
+        
+        # Feature Map
+        x=x.permute(0,2,1)
+        x = F.relu(self.bn(self.conv(x)))
+        x=x.permute(0,2,1)
+        return x
+
+class FoldingLayer(nn.Module):
+    """
+    The folding operation of FoldingNet
+    """
+
+    def __init__(self, in_channel: int, out_channels: list):
+        super(FoldingLayer, self).__init__()
+
+        layers = []
+        for oc in out_channels[:-1]:
+            conv = nn.Conv1d(in_channel, oc, 1)
+            bn = nn.BatchNorm1d(oc)
+            active = nn.ReLU(inplace=True)
+            layers.extend([conv, bn, active])
+            in_channel = oc
+        out_layer = nn.Conv1d(in_channel, out_channels[-1], 1)
+        layers.append(out_layer)
+        
+        self.layers = nn.Sequential(*layers)
+
+    def forward(self, grids, codewords):
+        """
+        Parameters
+        ----------
+            grids: reshaped 2D grids or intermediam reconstructed point clouds
+        """
+        # concatenate
+        x = torch.cat([grids, codewords], dim=1)
+        # shared mlp
+        x = self.layers(x)
+        
+        return x
     
 class arw_FoldingNet(nn.Module):
-    def __init__(self, h1, h3, initial_state=None, max_depth=4):
+    def __init__(self, h1, h3):
         super(arw_FoldingNet, self).__init__()
         self.activate = nn.ReLU()
         self.h1 = h1
         self.h3 = h3
-        self.input_dim = 12
+        self.k = 16
         
-        self.max_depth = max_depth
-        self.max_width = h1
+        self.conv1 = nn.Conv1d(12, h3, 1)
+        self.conv2 = nn.Conv1d(h3, h3, 1)
+        self.conv3 = nn.Conv1d(h3, h3, 1)
+
+        self.bn1 = nn.BatchNorm1d(h3)
+        self.bn2 = nn.BatchNorm1d(h3)
+        self.bn3 = nn.BatchNorm1d(h3)
         
-        self.e_layers1 = nn.ModuleList()
-        self.e_bn1 = nn.ModuleList()  # BatchNorm layers for encoder layers 1
-        self.e_layers2 = nn.ModuleList()
-        self.e_bn2 = nn.ModuleList()  # BatchNorm layers for encoder layers 2
-        self.d_layers1 = nn.ModuleList()
-        self.d_bn1 = nn.ModuleList()  # BatchNorm layers for decoder layers 1
-        self.d_layers2 = nn.ModuleList()
-        self.d_bn2 = nn.ModuleList()  # BatchNorm layers for decoder layers 2
+        self.graph_encoder1 = GraphLayer(h3, h3 * 2)
+        self.graph_encoder2 = GraphLayer(h3 * 2, h1)
         
-        self.initialize_state(initial_state)
+        self.conv4 = nn.Conv1d(h1, 512, 1)
+        self.bn4 = nn.BatchNorm1d(512)
         
-        # GraphConv layers for graph-based encoder
-        self.graph_encoder1 = GCNConv(self.h3, self.h3 * 2)
-        self.graph_bn1 = nn.BatchNorm1d(self.h3 * 2)  # BatchNorm for graph conv 1
+        xx = np.linspace(-40, 40, 45, dtype=np.float32)
+        yy = np.linspace(-60, 60, 45, dtype=np.float32)
+        self.grid = np.meshgrid(xx, yy)   # (2, 45, 45)
+
+        # reshape
+        self.grid = torch.Tensor(self.grid).view(2, -1)  # (2, 45, 45) -> (2, 45 * 45)
         
-        self.graph_encoder2 = GCNConv(self.h3 * 2, self.h1)
-        self.graph_bn2 = nn.BatchNorm1d(self.h1)  # BatchNorm for graph conv 2
-        
-        self.pooler = nn.AdaptiveMaxPool1d(1)
-        
-    def initialize_state(self, initial_state):
-        if initial_state is None:
-            initial_state = [[(self.input_dim, self.h3)], [(self.h1, self.h1)], [(self.h1 + 2, 3)], [(self.h1 + 3, 3)]]
-        for widths, layer_list, bn_list in zip(
-                initial_state, 
-                [self.e_layers1, self.e_layers2, self.d_layers1, self.d_layers2], 
-                [self.e_bn1, self.e_bn2, self.d_bn1, self.d_bn2]):
-            for insize, outsize in widths:
-                layer_list.append(nn.Linear(insize, outsize))
-                bn_list.append(nn.BatchNorm1d(outsize))
-    def compute_local_covariances(self, point_cloud, knn_idx):
-        b, n, c = point_cloud.shape  # B: batch size, N: number of points, C: number of channels (features)
+        self.m = self.grid.shape[1]
+
+        self.fold1 = FoldingLayer(512 + 2, [512, 512, 3])
+        self.fold2 = FoldingLayer(512 + 3, [512, 512, 3])
     
-        # Gather neighbors using knn indices
-        neighbors = torch.stack([point_cloud[b_idx, knn_idx[b_idx]] for b_idx in range(b)])  # (B, N, k, C)
-    
-        # Calculate the mean across the k-nearest neighbors
-        mean = torch.mean(neighbors, dim=2, keepdim=True)  # (B, N, 1, C)
-    
-        # Compute centered neighbors and covariance matrices
-        centered_neighbors = neighbors - mean  # (B, N, k, C)
-        covariances = torch.matmul(centered_neighbors.transpose(-1, -2), centered_neighbors) / (16 - 1)  # (B, N, C, C)
-    
-        # Flatten covariance matrices to a 2D feature vector
-        covariances_flat = covariances.view(b, n, -1)  # Flatten the last two dimensions (C, C) into a single dimension
-    
-        return covariances_flat
-    
-    def encode(self, data, knn):
+    def encode(self, data):
+        b,n,c=data.size()
+        knn_idx = knn(data, k=self.k)
+        knn_x = index_points(data, knn_idx)  # (B, N, 16, 3)
+        mean = torch.mean(knn_x, dim=2, keepdim=True)
+        knn_x = knn_x - mean
         batch_size, num_nodes, num_features = data.size()
-        cov = self.compute_local_covariances(data, knn)
+        cov = torch.matmul(knn_x.transpose(2, 3), knn_x).view(b, n, -1)
         x = torch.cat([data, cov], dim=2)
+        x=x.permute(0,2,1)
+        x = F.relu(self.bn1(self.conv1(x)))
+        x = F.relu(self.bn2(self.conv2(x)))
+        x = F.relu(self.bn3(self.conv3(x)))
+        x=x.permute(0,2,1)
+
+        # two consecutive graph layers
+        x = self.graph_encoder1(x)
+        x = self.graph_encoder2(x)
+        x=x.permute(0,2,1)
+        x = self.bn4(self.conv4(x))
         
-        for layer, bn in zip(self.e_layers1, self.e_bn1):
-            x = layer(x)
-            if x.size(0) > 1 and x.size(2) > 1:  # Check if batch size and spatial size > 1
-                x = x.permute(0, 2, 1)
-                x = bn(x)
-                x = x.permute(0, 2, 1)
-            x = self.activate(x)
-    
-        x = x.reshape(-1, x.size(-1))
-        
-        x = self.activate(self.graph_bn1(self.graph_encoder1(x, knn)))
-        x = self.activate(self.graph_bn2(self.graph_encoder2(x, knn)))
-        
-        x = x.reshape(batch_size, num_nodes, -1)
-        
-        x = x.permute(0, 2, 1)  # Change to [batch_size, out_features, num_nodes] for pooling
-        x = self.pooler(x)
-        x = x.permute(0, 2, 1)  # Change back to [batch_size, 1, out_features]
-        
-        for layer, bn in zip(self.e_layers2, self.e_bn2):
-            x = layer(x)
-            if x.size(0) > 1 and x.size(2) > 1:  # Check if batch size and spatial size > 1
-                x = x.permute(0, 2, 1)
-                x = bn(x)
-                x = x.permute(0, 2, 1)
-            x = self.activate(x)
-    
+        x = torch.max(x, dim=-1)[0]
         return x
 
     def decode(self, x, num_nodes):
-        num_nodes_x = int(1+(num_nodes * 120 / 60) ** 0.5)
-        num_nodes_y = int(1+(num_nodes * 60 / 120) ** 0.5)
-        x_grid = torch.linspace(1, 120, num_nodes_x).to(x.device)
-        y_grid = torch.linspace(1, 60, num_nodes_y).to(x.device)
-        grid_points = torch.cartesian_prod(x_grid, y_grid)
-        grid_points = grid_points[:num_nodes]
-        y = grid_points.unsqueeze(0).repeat(x.shape[0], 1, 1)
-        k = x.repeat(1, num_nodes, 1)
+        b = x.shape[0]
         
-        x = torch.cat([k, y], dim=2)
+        # repeat grid for batch operation
+        grid = self.grid.to(x.device)                      # (2, 45 * 45)
+        grid = grid.unsqueeze(0).repeat(b, 1, 1)  # (B, 2, 45 * 45)
         
-        for layer, bn in zip(self.d_layers1, self.d_bn1):
-            x = layer(x)
-            if x.size(0) > 1 and x.size(2) > 1:  # Check if batch size and spatial size > 1
-                x = x.permute(0, 2, 1)
-                x = bn(x)
-                x = x.permute(0, 2, 1)
-            x = self.activate(x)
-            
-        x = torch.cat([k, x], dim=2)
+        # repeat codewords
+        x = x.unsqueeze(2).repeat(1, 1, self.m)            # (B, 512, 45 * 45)
         
-        for layer, bn in zip(self.d_layers2, self.d_bn2):
-            x = layer(x)
-            if x.size(0) > 1 and x.size(2) > 1:  # Check if batch size and spatial size > 1
-                x = x.permute(0, 2, 1)
-                x = bn(x)
-                x = x.permute(0, 2, 1)
-            x = self.activate(x)
-        
-        return x
+        # two folding operations
+        recon1 = self.fold1(grid, x)
+        recon2 = self.fold2(recon1, x)
+        return recon2.permute(0,2,1)
     
+def knn(x, k):
+    """
+    Compute k-nearest neighbors for each point in a point cloud.
+    https://github.com/qinglew/FoldingNet/blob/master/utils.py
+    Parameters
+    ----------
+        x: Tensor of shape (B, C, N), input points data.
+        k: int, number of nearest neighbors.
+
+    Returns
+    -------
+        Tensor of shape (B, N, k), indices of k nearest neighbors.
+    """
+    sq_sum = torch.sum(x ** 2, dim=2, keepdim=True)  # (B, N, 1)
+    pairwise_distances = sq_sum - 2 * torch.matmul(x, x.transpose(2, 1)) + sq_sum.transpose(2, 1)  # (B, N, N)
+
+    # Extract indices of the k nearest neighbors
+    idx = pairwise_distances.topk(k=k, dim=-1, largest=False)[1]  # (B, N, k)
+    return idx
+
+def index_points(point_clouds, idx):
+    """
+    Index sub-tensors from a batch of tensors.
+
+    Parameters
+    ----------
+        point_clouds: Tensor of shape [B, N, C], input points data.
+        idx: Tensor of shape [B, N, k], sample index data.
+
+    Returns
+    -------
+        Tensor of indexed points data with shape [B, N, k, C].
+    """
+    batch_size = point_clouds.shape[0]
+    batch_indices = torch.arange(batch_size, dtype=torch.long, device=point_clouds.device).view(-1, 1, 1)
+    new_points = point_clouds[batch_indices, idx, :]
+    return new_points
+
 class arw_TRSNet(nn.Module):
     def __init__(self, h1,h3,initial_state=None,max_depth=8):
         super(arw_TRSNet, self).__init__()
@@ -309,7 +361,7 @@ class arw_TRSNet(nn.Module):
         
         return x
     
-    def forward(self, input_data, knn=None):
+    def forward(self, input_data):
         
         x = self.encode(input_data)
         y = self.decode(x)
@@ -395,7 +447,7 @@ class arw_MLPNet(nn.Module):
         else:
             return [self.e_layers1, self.e_layers2, self.d_layers1, self.d_layers2]
     
-    def encode(self, x, knn=None):
+    def encode(self, x):
         y = x.clone()
         
         for layer in self.e_layers1:
@@ -440,103 +492,3 @@ class arw_MLPNet(nn.Module):
         y = self.decode(x)
 
         return y
-    
-class arw_encoder(nn.Module):
-    def __init__(self, layers = 1):
-        super(arw_encoder, self).__init__()
-        self.activate = nn.LeakyReLU()
-        
-        self.e_layers1 = nn.ModuleList()
-        self.e_layers2 = nn.ModuleList()
-        self.pooler = nn.AdaptiveMaxPool1d(1)
-        
-        state = [[(12,self.h3)],[(self.h3,self.h1)]]
-        
-        if layers > 1:
-            for idx,i in enumerate(state):
-                for j in range(layers-1):
-                    old = i[0][-1]
-                    new = 0.5 * (old + i[0][0])
-                    state[idx][j][1] = new
-                    state[idx].insert(1,(new,old))
-            
-        for widths, layer_list in zip(state, [self.e_layers1, self.e_layers2]):
-            for insize, outsize in widths:
-                layer_list.append(nn.Linear(insize, outsize))
-        
-    def forward(self, x):
-        batch, num_points, dim = x.shape
-        neighborhood_size = max(10, num_points // 50)
-        cov = torch.zeros((batch, num_points, dim * dim),
-                          dtype=x.dtype).to(x.device)
-
-        for i in range(num_points):
-            neighborhood_start = max(0, i - neighborhood_size // 2)
-            neighborhood_end = min(num_points, i + neighborhood_size // 2 + 1)
-            neighborhood = point_cloud[:, neighborhood_start:neighborhood_end, :]
-
-            centered_neighborhood = neighborhood - torch.mean(neighborhood, dim=1, keepdim=True)
-            covariance_matrix = torch.matmul(centered_neighborhood.transpose(1, 2), centered_neighborhood) / (neighborhood_size - 1)
-            flattened_covariance = covariance_matrix.flatten(start_dim=1)
-
-            cov[:, i, :] = flattened_covariance
-            
-        x = torch.cat([data, cov], dim=2)
-        
-        for layer in self.e_layers1:
-            x = self.activate(layer(x))
-        
-        x = x.permute(0, 2, 1)
-        x = self.pooler(x)
-        x = x.permute(0, 2, 1)
-        
-        for layer in self.e_layers2:
-            x = self.activate(layer(x))
-
-        return x
-    
-class arw_decoder(nn.Module):
-    def __init__(self, layers = 1, xlim = 120, ylim = 60):
-        super(arw_decoder, self).__init__()
-        self.activate = nn.LeakyReLU()
-                
-        self.d_layers1 = nn.ModuleList()
-        self.d_layers2 = nn.ModuleList()
-        self.pooler = nn.AdaptiveMaxPool1d(1)
-        
-        state = [[(self.h1+2,3)],[(self.h1+3,3)]]
-        
-        if layers > 1:
-            for idx,i in enumerate(state):
-                for j in range(layers-1):
-                    old = i[0][-1]
-                    new = 0.5 * (old + i[0][0])
-                    state[idx][j][1] = new
-                    state[idx].insert(1,(new,old))
-            
-        for widths, layer_list in zip(state, [self.e_layers1, self.e_layers2]):
-            for insize, outsize in widths:
-                layer_list.append(nn.Linear(insize, outsize))
-                
-    def forward(self, x, num_nodes):
-        num_nodes_x = int(1+(num_nodes * xlim / ylim) ** 0.5)
-        num_nodes_y = int(1+(num_nodes * ylim / xlim) ** 0.5)
-        x_grid = torch.linspace(1, xlim, num_nodes_x).to(x.device)
-        y_grid = torch.linspace(1, ylim, num_nodes_y).to(x.device)
-        grid_points = torch.cartesian_prod(x_grid, y_grid)
-        grid_points = grid_points[:num_nodes]
-        y = grid_points.unsqueeze(0).repeat(x.shape[0], 1, 1)
-        
-        x = x.repeat(1,num_nodes,1)
-        
-        k = torch.cat([x, y], dim=2)
-        
-        for layer in self.d_layers1:
-            k = self.activate(layer(k))
-            
-        x = torch.cat([x, k], dim=2)
-        
-        for layer in self.d_layers2:
-            x = self.activate(layer(x))
-        
-        return x
