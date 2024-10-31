@@ -118,7 +118,7 @@ if __name__ == "__main__":
         X = X[sorted_indices].unsqueeze(0).to(device)
         
         with torch.no_grad():
-            encoded = encoder(X)
+            encoded, l = encoder(X)
             encoded = encoded + torch.randn_like(encoded) * args.noise
             d_out = densifier(X, encoded)
             

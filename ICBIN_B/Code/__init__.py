@@ -107,26 +107,25 @@ if __name__ == "__main__":
     parser.add_argument('--pc_gen', type=int,default=0)
     
     parser.add_argument('--cycles', type=int, default=1)
-    parser.add_argument('--numpoints', type=int,default=512)
+    parser.add_argument('--numpoints', type=int,default=2048)
     parser.add_argument('-v','--visual', action='store_true')
-    parser.add_argument('-n','--network', type=str, choices=['trs', 'fold', 'mlp'],
+    parser.add_argument('-n','--network', type=str, choices=['trs', 'fold'],
                         help='Network call sign')
     
     args = parser.parse_args(['--direct','../','-n','fold',
-                              '-v',
-                              '-a',
+                              #'-v',
                               '-g',
                               #'--grow',
                               #'--grow_thresh','0.9',
                               '-i','1',# 3 different layer start combos
                               '--batch','32',
-                              '-lr','1e-3','--decay','1e-6',
+                              '-lr','1e-2','--decay','1e-6',
                               '-e','0',
-                              '-t','120',
+                              '-t','900',
                               '--pint','1',
                               '--chpt','0',
-                              '--cycles','2',
-                              '--noise','3',
+                              '--cycles','1',
+                              '--noise','8',
                               '--name','fold',
                               '--pc_gen','0',
                               '--loadgen','gangen_fold_512_128_64',
@@ -289,8 +288,7 @@ if __name__ == "__main__":
                 points = pd.DataFrame(points, columns=['x', 'y', 'z'])
                 points, _ = pch.inc_PCA(points)
                 pch.create_stl(points,
-                               f'{args.direct}Data/Generated/{args.loadgen[:-4]}_{i}.stl',
-                               32)
+                               f'{args.direct}Data/Generated/{args.loadgen[:-4]}_{i}.stl')
                 
     if args.grow:
         perc_thresh = int(args.grow_thresh*100)

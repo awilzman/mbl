@@ -67,7 +67,7 @@ class GAN_Loss(nn.Module):
             mean1 = torch.mean(min_distances1)
             mean2 = torch.mean(min_distances2)
             loss_cloud = max(mean1,mean2)
-            loss += loss_cloud/100
+            loss += loss_cloud
         
         return loss
     
