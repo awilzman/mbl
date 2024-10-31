@@ -24,7 +24,7 @@ class tet10_encoder(nn.Module):
         
         self.fc1 = nn.Sequential(
             nn.Linear(fc_input_size,hidden_size),
-            nn.SiLU(),
+            nn.SELU(),
             nn.Linear(hidden_size,hidden_size)
             )
         
@@ -55,19 +55,19 @@ class tet10_decoder(nn.Module):
         
         self.decode_codeword = nn.Sequential(
             nn.Linear(hidden_size, hidden_size * 2),
-            nn.SiLU(),
+            nn.SELU(),
             nn.Linear(hidden_size * 2, hidden_size * 4),
-            nn.SiLU(),
+            nn.SELU(),
             nn.Linear(hidden_size * 4, max_points)
         )
         
         self.decode_points = nn.Sequential(
             nn.Linear(1, 4),
-            nn.SiLU(),
+            nn.SELU(),
             nn.Linear(4, 8),
-            nn.SiLU(),
+            nn.SELU(),
             nn.Linear(8, 16),
-            nn.SiLU(),
+            nn.SELU(),
             nn.Linear(16, 31)
         )
         

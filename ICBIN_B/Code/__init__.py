@@ -110,9 +110,9 @@ if __name__ == "__main__":
     parser.add_argument('--eval_bs', type=int, default=8, help='eval batch size')
     parser.add_argument('--pint', type=int,default=0)
     parser.add_argument('--noise', type=int,default=3)
-    parser.add_argument('--hidden1', type=int,default=256)
+    parser.add_argument('--hidden1', type=int,default=1024)
     parser.add_argument('--hidden2', type=int,default=128)
-    parser.add_argument('--hidden3', type=int,default=256)
+    parser.add_argument('--hidden3', type=int,default=512)
     parser.add_argument('--name', type=str,default='')
     parser.add_argument('--loadgen', type=str,default='')
     parser.add_argument('--loadclass', type=str,default='')
@@ -125,7 +125,6 @@ if __name__ == "__main__":
     
     args = parser.parse_args(['--direct','../','-n','trs',
                               '-v',
-                              '-a',
                               '-g',
                               #'--grow',
                               #'--grow_thresh','0.9',
@@ -133,13 +132,13 @@ if __name__ == "__main__":
                               '--batch','64',
                               '-lr','1e-3','--decay','1e-7',
                               '-e','0',
-                              '-t','60',
+                              '-t','600',
                               '--pint','1',
                               '--chpt','0',
                               '--cycles','1',
                               '--noise','2',
                               '--name','trs',
-                              '--loadgen','diff_trs_256_128_256',
+                              '--loadgen','ae_large_trs3_1_1024_128_512_0',
                               '--loadclass','',
                               '--loaddis',''])
                     
