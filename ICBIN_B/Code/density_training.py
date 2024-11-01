@@ -72,7 +72,7 @@ def train(encoder, densifier, dataloader, optimizer, criterion, noise, device):
     for features, labels in dataloader:
         features, labels = features.to(device), labels.to(device)
         
-        encoded_features = encoder(features)
+        encoded_features, _ = encoder(features)
         
         # Variational Autoencoder to latent -> N(0,1), efficient kl_loss
         kl_loss = 0.5 * encoded_features.pow(2).sum(dim=-1).mean()
@@ -105,7 +105,7 @@ def evaluate(encoder, densifier, dataloader, criterion, device):
         for features, labels in dataloader:
             features, labels = features.to(device), labels.to(device)
             
-            encoded_features = encoder(features)
+            encoded_features, _ = encoder(features)
             densities = densifier(features, encoded_features)
             
             loss = criterion(densities[labels != 0].squeeze(-1), labels[labels != 0])
@@ -196,11 +196,11 @@ if __name__ == "__main__":
                               '-h1','16',
                               '--layers','2',
                               '-lr', '1e-2', '--decay', '1e-6',
-                              '-e', '100',
+                              '-e', '30',
                               '--pint','1',
                               '--optim','adam',
-                              '--load', 'med',
-                              '--name', 'med'])
+                              '--load', 'new',
+                              '--name', 'new'])
 
     if torch.cuda.is_available():
         print('CUDA available')
@@ -302,12 +302,8 @@ if __name__ == "__main__":
             print(f'Epoch [{epoch+1:4d}/{args.epochs:4d}], '
                   f'Train Time: {train_time:7.2f} s, Train Loss: {train_loss:8.3e}')
         scheduler.step(train_loss)
-        
     criterion = nn.L1Loss()
     test_loss = evaluate(encoder, densifier, test_loader, criterion, device)
-    
-    path = args.direct+'Models/'+args.name+'.pth' 
-    
     state = {
         'encoder_state_dict': encoder.state_dict(),
         'densifier_state_dict': densifier.state_dict(),
@@ -317,19 +313,19 @@ if __name__ == "__main__":
         'testing_loss': test_loss,
         'scale_factor': train_dataset.label_scaling_factor
     }
-    torch.save(state, path)
-    
     path = f'{args.direct}Metrics/{args.name}_{args.hidden1}x{args.layers}.csv'
     metrics = pd.DataFrame(state['train_losses'])
-    metrics.to_csv(path)   
-    
+    metrics.to_csv(path)
     print(f'Saved {args.name}. Test MAE: {test_loss:.3e}')
     
+    path = args.direct+'Models/'+args.name+'.pth' 
+    
+    
+    torch.save(state, path)
     if args.visual:
         import matplotlib.pyplot as plt
         #print('Showing example input data...')
         #show_bone(test_dataset[0],train_dataset.label_scaling_factor)
-        
         if args.load != '':
             plot_loss(args.name,train_losses,train_loss_hist)
         else:

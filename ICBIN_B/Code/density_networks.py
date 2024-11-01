@@ -22,11 +22,9 @@ class tet10_encoder(nn.Module):
         # Output size depends on whether the LSTM is bidirectional
         fc_input_size = hidden_size * 2 if bidirectional else hidden_size
         
-        self.fc1 = nn.Sequential(
-            nn.Linear(fc_input_size,hidden_size),
-            nn.SELU(),
-            nn.Linear(hidden_size,hidden_size)
-            )
+        self.conv1 = nn.Conv1d(fc_input_size,hidden_size,1)
+        self.bn = nn.BatchNorm1d(hidden_size)
+        self.conv2 = nn.Conv1d(hidden_size,hidden_size,1)
         
     def forward(self, x):
         # Calculate sequence lengths, assuming padding value is 0
@@ -37,17 +35,18 @@ class tet10_encoder(nn.Module):
         packed_output, (h_n, c_n) = self.lstm(packed_input)
     
         # Unpack sequences to get the hidden states for all time steps
-        output, _ = nn.utils.rnn.pad_packed_sequence(packed_output, batch_first=True)
+        x, _ = nn.utils.rnn.pad_packed_sequence(packed_output, batch_first=True)
     
         # (output is of shape [batch_size, seq_len, hidden_size])
         if self.lstm.bidirectional:
             # If bidirectional, concatenate the forward and backward hidden states at each time step
-            output = torch.cat((output[:, :, :self.lstm.hidden_size], 
-                                output[:, :, self.lstm.hidden_size:]), dim=2)
+            x = torch.cat((x[:, :, :self.lstm.hidden_size],
+                           x[:, :, self.lstm.hidden_size:]), dim=2)
+        x=x.permute(0,2,1)
+        x = self.conv2(self.bn(self.conv1(x)))
+        x=x.permute(0,2,1)
         
-        output = self.fc1(output)
-    
-        return output, lengths
+        return x, lengths
     
 class tet10_decoder(nn.Module):
     def __init__(self, hidden_size=16, max_points=1024):
@@ -55,9 +54,9 @@ class tet10_decoder(nn.Module):
         
         self.decode_codeword = nn.Sequential(
             nn.Linear(hidden_size, hidden_size * 2),
-            nn.SELU(),
+            nn.ReLU(),
             nn.Linear(hidden_size * 2, hidden_size * 4),
-            nn.SELU(),
+            nn.ReLU(),
             nn.Linear(hidden_size * 4, max_points)
         )
         

@@ -3,6 +3,7 @@
 Created on Thu Jan 18 16:03:37 2024
 
 @author: Andrew R Wilzman
+Structure https://github.com/qinglew/FoldingNet
 """
 
 import torch
@@ -10,19 +11,17 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
     
-class jarvis(nn.Module): # Discriminator network
+class jarvis(nn.Module): # Discriminator network based on FoldNet
     def __init__(self, insize):
         super(jarvis, self).__init__()
-        self.activate = nn.SELU()
+        self.activate = nn.ReLU()
         h3=16
         self.k=16
         self.conv1 = nn.Conv1d(12, h3, 1)
         self.conv2 = nn.Conv1d(h3, h3, 1)
-        self.conv3 = nn.Conv1d(h3, h3, 1)
 
         self.bn1 = nn.BatchNorm1d(h3)
         self.bn2 = nn.BatchNorm1d(h3)
-        self.bn3 = nn.BatchNorm1d(h3)
         
         self.graph_encoder1 = GraphLayer(h3, h3 * 2)
         self.graph_encoder2 = GraphLayer(h3 * 2, insize)
@@ -31,16 +30,19 @@ class jarvis(nn.Module): # Discriminator network
         self.bn4 = nn.BatchNorm1d(insize)
         self.fc_encoder2 = nn.Sequential(
             nn.Linear(insize, insize//2),
-            nn.Dropout(0.2),
             self.activate,
             nn.Linear(insize//2, insize//4),
             self.activate,
-            nn.Linear(insize//4, insize//16),
+            nn.Linear(insize//4, insize//8),
             self.activate,
-            nn.Linear(insize//16, 1),
+            nn.Linear(insize//8, insize//16),
+            self.activate,
+            nn.Linear(insize//16, 4),
+            nn.Tanh(),
+            nn.Linear(4, 1),
             nn.Sigmoid())
     
-    def encode(self, data):
+    def forward(self, data):
         b,n,c=data.size()
         knn_idx = knn(data, k=self.k)
         knn_x = index_points(data, knn_idx)  # (B, N, 16, 3)
@@ -52,7 +54,6 @@ class jarvis(nn.Module): # Discriminator network
         x=x.permute(0,2,1)
         x = F.relu(self.bn1(self.conv1(x)))
         x = F.relu(self.bn2(self.conv2(x)))
-        x = F.relu(self.bn3(self.conv3(x)))
         x=x.permute(0,2,1)
 
         # two consecutive graph layers
@@ -60,13 +61,9 @@ class jarvis(nn.Module): # Discriminator network
         x = self.graph_encoder2(x)
         x=x.permute(0,2,1)
         x = self.bn4(self.conv4(x))
+        x = torch.max(x, dim=-1)[0]
         
-        return torch.max(x, dim=-1)[0]
-        
-    def forward(self, x):
-        x = self.encode(x)
-        x = self.fc_encoder2(x)
-        return x
+        return self.fc_encoder2(x)
     
 def knn(x, k):
     """

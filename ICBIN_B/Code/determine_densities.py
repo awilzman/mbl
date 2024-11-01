@@ -9,6 +9,7 @@ import numpy as np
 import pyvista as pv
 import matplotlib.pyplot as plt
 import seaborn as sns
+import inp_from_mimics as inpfm
 
 def plot_weights(model, layer_name):
     """Plot the weights of a specific layer or parameter in the model."""
@@ -52,7 +53,6 @@ if __name__ == "__main__":
     parser.add_argument('-l','--load', type=str, default='')
     parser.add_argument('--hidden1', type=int, required=True)
     parser.add_argument('--layers', type=int, required=True)
-    parser.add_argument('--experts', type=int, default=1)
     parser.add_argument('-b','--bidir', action='store_true')
     parser.add_argument('--savevtk', action='store_true')
     parser.add_argument('-v','--visualize', action='store_true')
@@ -60,9 +60,9 @@ if __name__ == "__main__":
 
     args = parser.parse_args(['-d', 'A:/Work/','-v',
                               #'-b',
-                              '-l','simp2',
+                              '-l','blimp',
                               '--hidden1', '32',
-                              '--layers', '4'
+                              '--layers', '6'
                               ])
     
     if torch.cuda.is_available():
@@ -78,7 +78,7 @@ if __name__ == "__main__":
             args.load += '.pth'
     
     #load fabricated inps
-    fab_data = os.path.join(args.direct, 'Data/inps/Fabricated/')
+    fab_data = os.path.join(args.direct, 'Data/inps/Fabricated/geo_only')
     inp_files = [f for f in os.listdir(fab_data) if f.endswith('.inp')]
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -88,15 +88,7 @@ if __name__ == "__main__":
     checkpoint = torch.load(os.path.join(args.direct, 'Models', args.load))
     encoder.load_state_dict(checkpoint['encoder_state_dict'])
     densifier.load_state_dict(checkpoint['densifier_state_dict'])
-    
-    epochs_trained = checkpoint['epoch']
-    train_loss_hist = checkpoint.get('train_losses', [])
-    test_loss = checkpoint['testing_loss']
-    scale_factor = checkpoint['scale_factor']
-    
-    plot_weights(encoder, 'lstm.weight_ih_l0')
-    plot_weights(encoder, 'lstm.weight_hh_l0')
-    plot_weights(encoder, 'fc1')
+    scale_factor= checkpoint['scale_factor']
     all_data = {}
     
     #densify all inp_files
@@ -126,5 +118,12 @@ if __name__ == "__main__":
         d_out = d_out.detach().cpu().numpy().squeeze(0)
         
         if args.visualize:
-            
             dtrn.show_bone([X,d_out],scale_factor)
+            
+        #calculate real e11 with scale factor and assign anisotropy
+        #create ~200 bins of material definitions
+        #assign each element ID to a bin
+        #write material assignments expicitly 
+        #PCA?
+        
+        
