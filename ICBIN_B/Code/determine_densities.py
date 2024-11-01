@@ -58,11 +58,11 @@ if __name__ == "__main__":
     parser.add_argument('-v','--visualize', action='store_true')
     parser.add_argument('-n','--noise', type=float, default=1e-3)
 
-    args = parser.parse_args(['-d', 'A:/Work/','-v',
+    args = parser.parse_args(['-d', '../','-v',
                               #'-b',
-                              '-l','blimp',
-                              '--hidden1', '32',
-                              '--layers', '6'
+                              '-l','woah',
+                              '--hidden1', '16',
+                              '--layers', '1'
                               ])
     
     if torch.cuda.is_available():
@@ -98,12 +98,11 @@ if __name__ == "__main__":
         inp_path = os.path.join(fab_data, inp_file)
         
         inp_parser = inpsl.AbaqusInpParser(inp_path)
-        inp_data = inp_parser.read_inp()
-        inp_parser.extract_nodes_elements(inp_data)
-        element_data = inp_parser.create_element_data()
+        element_data = inp_parser.process_inp_file()
+        element_data[:,:-2] = element_data[:,:-2]*1e-3# mm -> m 
         
         #guess densities, inp_parser has 0s in place of density if not read
-        X = torch.FloatTensor(element_data[:,:-1]*1e-3) # mm -> m 
+        X = torch.FloatTensor(element_data[:,:-1]) 
         sorted_indices = torch.argsort(X[:, 2])
         sorted_indices = sorted_indices[torch.argsort(X[sorted_indices, 1])]
         sorted_indices = sorted_indices[torch.argsort(X[sorted_indices, 0])]
