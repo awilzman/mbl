@@ -90,13 +90,21 @@ class tet10_densify(nn.Module):
         self.act = nn.LeakyReLU()
 
         # Cortical
+<<<<<<< HEAD
+        self.cort_mlp1 = nn.Linear(self.feature_size + codeword_size, self.codeword_size,1)
+=======
         self.cort_conv1 = nn.Conv1d(self.feature_size + codeword_size, self.codeword_size,1)
+>>>>>>> 9356bc62102681892fb5bbcebec550bde83a3088
         self.cort_conv2 = nn.Conv1d(self.codeword_size, self.codeword_size//4,1)
         self.cort_conv3 = nn.Conv1d(self.codeword_size//4, self.codeword_size//8,1)
         self.cort_conv4 = nn.Conv1d(self.codeword_size//8, 1,1)
 
         # Trabecular
+<<<<<<< HEAD
+        self.trab_mlp1 = nn.Linear(self.feature_size + codeword_size, self.codeword_size,1)
+=======
         self.trab_conv1 = nn.Conv1d(self.feature_size + codeword_size, self.codeword_size,1)
+>>>>>>> 9356bc62102681892fb5bbcebec550bde83a3088
         self.trab_conv2 = nn.Conv1d(self.codeword_size, self.codeword_size//4,1)
         self.trab_conv3 = nn.Conv1d(self.codeword_size//4, self.codeword_size//8,1)
         self.trab_conv4 = nn.Conv1d(self.codeword_size//8, 1,1)
@@ -118,8 +126,14 @@ class tet10_densify(nn.Module):
         
         # Cortical
         x_cort = x[cort_indices]
+<<<<<<< HEAD
+        
+        x_cort = self.act(self.cort_mlp1(x_cort))
+        x_cort = x_cort.permute(1,0)
+=======
         x_cort = x_cort.permute(1,0)
         x_cort = self.act(self.cort_conv1(x_cort))
+>>>>>>> 9356bc62102681892fb5bbcebec550bde83a3088
         x_cort = self.act(self.cort_conv2(x_cort))
         x_cort = self.act(self.cort_conv3(x_cort))
         x_cort = self.act(self.cort_conv4(x_cort))
@@ -127,8 +141,14 @@ class tet10_densify(nn.Module):
         
         # Trabecular
         x_trab = x[trab_indices]
+<<<<<<< HEAD
+        
+        x_trab = self.act(self.trab_mlp1(x_trab))
+        x_trab = x_trab.permute(1,0)
+=======
         x_trab = x_trab.permute(1,0)
         x_trab = self.act(self.trab_conv1(x_trab))
+>>>>>>> 9356bc62102681892fb5bbcebec550bde83a3088
         x_trab = self.act(self.trab_conv2(x_trab))
         x_trab = self.act(self.trab_conv3(x_trab))
         x_trab = self.act(self.trab_conv4(x_trab))
