@@ -190,13 +190,13 @@ if __name__ == "__main__":
     parser.add_argument('-v', '--visual', action='store_true')
     
     args = parser.parse_args(['--direct', 'A:/Work/',
-                              '--noise','0.0002',
+                              '--noise','0.01',
                               '-v',
                               '--batch','64',
                               '-h1','16',
                               '--layers','2',
                               '-lr', '1e-2', '--decay', '1e-6',
-                              '-e', '30',
+                              '-e', '40',
                               '--pint','1',
                               '--optim','adam',
                               '--load', 'new',
@@ -259,8 +259,6 @@ if __name__ == "__main__":
     optimizer = optimizer_dict[optimizer_name]()
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer,'min')
     # Criterion
-    criterion = nn.HuberLoss()
-        
     criterion = nn.HuberLoss()
     train_loss_hist = []
     new_flag = False

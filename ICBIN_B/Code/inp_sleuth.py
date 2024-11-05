@@ -11,6 +11,25 @@ import argparse
 import h5py
 from sklearn.model_selection import train_test_split 
 
+def read_inp(input_file, header='*HEADING', stop_line='bleepbloop', keep=False):
+    # Default values result in whole file read, not including heading
+    # and only if *HEADING is there in the beginning
+    with open(input_file, 'r') as inp_file:
+        in_data = False
+        data = []
+        for line in inp_file:
+            line = line.strip()
+            if line.startswith(header):
+                in_data = True
+                if keep:
+                    data.append(line)
+            elif in_data:
+                if line.startswith(stop_line):
+                    in_data = False
+                else:
+                    data.append(line)
+    return data
+
 class AbaqusInpParser:
     def __init__(self, input_file):
         self.input_file = input_file
