@@ -36,7 +36,7 @@ def create_stl(points, filename, depth=16):
     pcd.points = o3d.utility.Vector3dVector(np.array(points))
     
     # Estimate normals
-    pcd.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=1.5, max_nn=30))
+    pcd.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=2, max_nn=30))
     pcd.orient_normals_consistent_tangent_plane(k=30)  # Ensure normals are consistently oriented
     
     # Perform Poisson surface reconstruction

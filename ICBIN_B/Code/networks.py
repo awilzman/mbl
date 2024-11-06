@@ -209,6 +209,7 @@ class arw_FoldingNet(nn.Module):
         mean = torch.mean(knn_x, dim=2, keepdim=True)
         knn_x = knn_x - mean
         batch_size, num_nodes, num_features = data.size()
+        
         cov = torch.matmul(knn_x.transpose(2, 3), knn_x).view(b, n, -1)
         x = torch.cat([data, cov], dim=2)
         x=x.permute(0,2,1)
@@ -258,13 +259,14 @@ class arw_TRSNet(nn.Module):
         
         self.conv1 = nn.Conv1d(12, h3, 1)
         self.conv2 = nn.Conv1d(h3, h3, 1)
-        self.conv3 = nn.Conv1d(h3, h3, 1)
+        self.conv3 = nn.Conv1d(h3, h1, 1)
+        self.conv4 = nn.Conv1d(h1, h1, 1)
 
         self.bn1 = nn.BatchNorm1d(h3)
         self.bn2 = nn.BatchNorm1d(h3)
-        self.bn3 = nn.BatchNorm1d(h3)
+        self.bn3 = nn.BatchNorm1d(h1)
+        self.bn4 = nn.BatchNorm1d(h1)
         
-        self.graph_encoder = GraphLayer(h3, h1)
         self.trs_encoder = nn.TransformerEncoderLayer(self.h1,self.h4,batch_first=True)
         
         self.trs_decoder = nn.TransformerDecoderLayer(self.h1, self.h4, batch_first=True)
@@ -275,7 +277,7 @@ class arw_TRSNet(nn.Module):
 
         # reshape
         self.grid = torch.Tensor(self.grid).view(2, -1)
-        
+        self.m = self.grid.shape[1]
 
         self.fold1 = FoldingLayer(h1 + 2, [h1, h1, 3])
         self.fold2 = FoldingLayer(h1 + 3, [h1, h1, 3])
@@ -298,9 +300,8 @@ class arw_TRSNet(nn.Module):
         x=x.permute(0,2,1)
 
         # two consecutive graph layers
-        x = self.graph_encoder(x)
-        x=x.permute(0,2,1)
         x = self.trs_encoder(x)
+        x=x.permute(0,2,1)
         x = self.bn4(self.conv4(x))
         
         x = torch.max(x, dim=-1)[0]
@@ -309,7 +310,7 @@ class arw_TRSNet(nn.Module):
     def decode(self, x, num_nodes):
         b,c = x.shape
         
-        x = self.trs_decoder(x)
+        x = self.trs_decoder(x,x)
         
         grid = self.grid.to(x.device)
         grid = grid.unsqueeze(0).repeat(b, 1, 1)

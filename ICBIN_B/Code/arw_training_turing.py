@@ -315,9 +315,9 @@ def train_GD(training_inputs, Gnet, Dnet, dec_hid, epochs, learning_rate, decay,
     
     # Only include decoder parameters of Gnet
     if 'trs' in Gnet.__class__.__name__.lower():
-        decoder_params = (list(Gnet.d_layers1.parameters()) + 
+        decoder_params = (list(Gnet.fold1.parameters()) + 
                           list(Gnet.trs_decoder.parameters()) + 
-                          list(Gnet.d_layers2.parameters()))
+                          list(Gnet.fold2.parameters()))
     elif 'fold' in Gnet.__class__.__name__.lower():
         decoder_params = (list(Gnet.fold1.parameters()) + 
                           list(Gnet.fold2.parameters()))

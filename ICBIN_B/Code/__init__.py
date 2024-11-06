@@ -99,7 +99,7 @@ if __name__ == "__main__":
     parser.add_argument('--noise', type=int,default=3)
     parser.add_argument('--hidden1', type=int,default=512)
     parser.add_argument('--hidden2', type=int,default=128)
-    parser.add_argument('--hidden3', type=int,default=64)
+    parser.add_argument('--hidden3', type=int,default=256)
     
     parser.add_argument('--name', type=str,default='')
     parser.add_argument('--loadgen', type=str,default='')
@@ -113,22 +113,22 @@ if __name__ == "__main__":
                         help='Network call sign')
     
     args = parser.parse_args(['--direct','../','-n','fold',
-                              #'-v',
-                              '-g',
+                              '-v',
+                              '-a',
                               #'--grow',
                               #'--grow_thresh','0.9',
                               '-i','1',# 3 different layer start combos
                               '--batch','32',
                               '-lr','1e-2','--decay','1e-6',
                               '-e','0',
-                              '-t','900',
+                              '-t','9',
                               '--pint','1',
                               '--chpt','0',
                               '--cycles','1',
                               '--noise','8',
-                              '--name','fold',
-                              '--pc_gen','0',
-                              '--loadgen','gangen_fold_512_128_64',
+                              '--name','_',
+                              '--pc_gen','5',
+                              '--loadgen','gangen_lrg_fold_512_128_256',
                               '--loaddis',''])
                     
     #Initialize vars
@@ -226,7 +226,7 @@ if __name__ == "__main__":
         state = None
         
     if args.network == 'trs':
-        network = networks.arw_TRSNet(args.hidden1,args.hidden3,state).to(device)
+        network = networks.arw_TRSNet(args.hidden1,args.hidden3).to(device)
     elif args.network == 'fold':
         network = networks.arw_FoldingNet(args.hidden1,args.hidden3).to(device)
     elif args.network == 'mlp':
