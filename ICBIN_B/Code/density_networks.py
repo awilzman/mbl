@@ -22,9 +22,9 @@ class tet10_encoder(nn.Module):
         # Output size depends on whether the LSTM is bidirectional
         fc_input_size = hidden_size * 2 if bidirectional else hidden_size
         
-        self.conv1 = nn.Conv1d(fc_input_size,hidden_size,1)
+        self.conv = nn.Conv1d(fc_input_size,hidden_size,1)
         self.bn = nn.BatchNorm1d(hidden_size)
-        self.conv2 = nn.Conv1d(hidden_size,hidden_size,1)
+        self.fc = nn.Linear(hidden_size,hidden_size)
         
     def forward(self, x):
         # Calculate sequence lengths, assuming padding value is 0
@@ -43,8 +43,9 @@ class tet10_encoder(nn.Module):
             x = torch.cat((x[:, :, :self.lstm.hidden_size],
                            x[:, :, self.lstm.hidden_size:]), dim=2)
         x=x.permute(0,2,1)
-        x = self.conv2(self.bn(self.conv1(x)))
+        x = self.bn(self.conv(x))
         x=x.permute(0,2,1)
+        x = F.relu(self.fc(x))
         
         return x, lengths
     
@@ -92,14 +93,16 @@ class tet10_densify(nn.Module):
         # Cortical
         self.cort_mlp1 = nn.Linear(self.feature_size + codeword_size, self.codeword_size,1)
         self.cort_conv2 = nn.Conv1d(self.codeword_size, self.codeword_size//4,1)
-        self.cort_conv3 = nn.Conv1d(self.codeword_size//4, self.codeword_size//8,1)
-        self.cort_conv4 = nn.Conv1d(self.codeword_size//8, 1,1)
+        self.cort_conv3 = nn.Conv1d(self.codeword_size//4, self.codeword_size//16,1)
+        self.cort_conv4 = nn.Conv1d(self.codeword_size//16, self.codeword_size//32,1)
+        self.cort_conv5 = nn.Conv1d(self.codeword_size//32, 1,1)
 
         # Trabecular
         self.trab_mlp1 = nn.Linear(self.feature_size + codeword_size, self.codeword_size,1)
         self.trab_conv2 = nn.Conv1d(self.codeword_size, self.codeword_size//4,1)
-        self.trab_conv3 = nn.Conv1d(self.codeword_size//4, self.codeword_size//8,1)
-        self.trab_conv4 = nn.Conv1d(self.codeword_size//8, 1,1)
+        self.trab_conv3 = nn.Conv1d(self.codeword_size//4, self.codeword_size//16,1)
+        self.trab_conv4 = nn.Conv1d(self.codeword_size//16, self.codeword_size//32,1)
+        self.trab_conv5 = nn.Conv1d(self.codeword_size//32, 1,1)
 
     def forward(self, elems, encoded_features):
         # elems shape: (B, E, 31) - Original features
@@ -123,6 +126,7 @@ class tet10_densify(nn.Module):
         x_cort = self.act(self.cort_conv2(x_cort))
         x_cort = self.act(self.cort_conv3(x_cort))
         x_cort = self.act(self.cort_conv4(x_cort))
+        x_cort = self.act(self.cort_conv5(x_cort))
         x_cort = x_cort.permute(1,0)
         
         # Trabecular
@@ -132,10 +136,12 @@ class tet10_densify(nn.Module):
         x_trab = self.act(self.trab_conv2(x_trab))
         x_trab = self.act(self.trab_conv3(x_trab))
         x_trab = self.act(self.trab_conv4(x_trab))
+        x_trab = self.act(self.trab_conv5(x_trab))
         x_trab = x_trab.permute(1,0)
-
+        
+        
         # Concatenate cortical and trabecular back together
         x_combined[cort_indices] = x_cort
         x_combined[trab_indices] = x_trab
 
-        return x_combined
+        return F.relu(x_combined)

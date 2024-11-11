@@ -82,11 +82,11 @@ if __name__ == "__main__":
     parser.add_argument('--bend_loads', default=[100,200,300])
     parser.add_argument('--bend_angle', type=int, default=30)
     
-    args = parser.parse_args(['-d', 'A:/Work/',#'-v',
+    args = parser.parse_args(['-d', 'A:/Work/','-v',
                               #'-b',
-                              '-l','crimp',
+                              '-l','newnew',
                               '--hidden1', '32',
-                              '--layers', '6'
+                              '--layers', '2'
                               ])
     
     if torch.cuda.is_available():
@@ -181,7 +181,7 @@ if __name__ == "__main__":
         
         if args.visualize:
             dtrn.show_bone([X,E_out],scale_factor)
-            
+            #%%
         #calculate real e11 with scale factor and assign anisotropy
         #create args.matnum bins of material definitions
         #assign each element ID to a bin

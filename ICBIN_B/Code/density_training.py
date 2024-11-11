@@ -193,14 +193,14 @@ if __name__ == "__main__":
                               '--noise','0.01',
                               '-v',
                               '--batch','64',
-                              '-h1','16',
+                              '-h1','32',
                               '--layers','2',
                               '-lr', '1e-2', '--decay', '1e-6',
-                              '-e', '40',
+                              '-e', '30',
                               '--pint','1',
                               '--optim','adam',
-                              '--load', 'new',
-                              '--name', 'new'])
+                              '--load', 'newnew',
+                              '--name', 'newnew'])
 
     if torch.cuda.is_available():
         print('CUDA available')

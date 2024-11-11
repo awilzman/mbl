@@ -29,7 +29,7 @@ def inc_PCA(bone):
     bone.loc[:,['x','y','z']]=reoriented_coordinates
     return bone, rotation_matrix
 
-def create_stl(points, filename, depth=16):
+def create_stl(points, filename, depth=16, view=False):
 
     # Determine the bounds of the point cloud
     pcd = o3d.geometry.PointCloud()
@@ -45,10 +45,28 @@ def create_stl(points, filename, depth=16):
     mesh = mesh.remove_degenerate_triangles()
     mesh = mesh.remove_duplicated_triangles()
     mesh = mesh.remove_duplicated_vertices()
+    mesh = mesh.remove_non_manifold_edges()
+    mesh = mesh.filter_smooth_simple(number_of_iterations=3)
+    mesh = mesh.remove_non_manifold_edges()
     
     mesh.compute_vertex_normals()
+    if not (mesh.is_edge_manifold() and mesh.is_watertight()):
+        print("didn't work")
+        return -1 # Exit if mesh is not solid
+
+    # Optional visualization step
+    if view:
+        o3d.visualization.draw_geometries([mesh], window_name="Mesh Preview")
+
+        # Request user confirmation
+        confirm = input("Save the mesh as STL? (y/n): ")
+        if confirm.lower() != 'y':
+            print("Mesh not saved.")
+            return 0 # Exit function if user vetoes
+        
+    o3d.io.write_triangle_mesh(filename, mesh, write_ascii=False)
     
-    o3d.io.write_triangle_mesh(filename, mesh)
+    return 1
     
 def convert_to_tet10(points, tetrahedra, filtered_densities):
     point_index_map = {tuple(p): i for i, p in enumerate(points)}
