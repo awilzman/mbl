@@ -10,8 +10,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-    
-class jarvis(nn.Module): # Discriminator network based on FoldNet
+
+class jarvis(nn.Module): # Discriminator network
     def __init__(self, insize):
         super(jarvis, self).__init__()
         self.activate = nn.ReLU()
@@ -19,15 +19,8 @@ class jarvis(nn.Module): # Discriminator network based on FoldNet
         self.k=16
         self.conv1 = nn.Conv1d(12, h3, 1)
         self.conv2 = nn.Conv1d(h3, h3, 1)
-
-        self.bn1 = nn.BatchNorm1d(h3)
-        self.bn2 = nn.BatchNorm1d(h3)
         
-        self.graph_encoder1 = GraphLayer(h3, h3 * 2)
-        self.graph_encoder2 = GraphLayer(h3 * 2, insize)
-        
-        self.conv4 = nn.Conv1d(insize, insize, 1)
-        self.bn4 = nn.BatchNorm1d(insize)
+        self.conv4 = nn.Conv1d(h3, insize, 1)
         self.fc_encoder2 = nn.Sequential(
             nn.Linear(insize, insize//2),
             self.activate,
@@ -52,19 +45,13 @@ class jarvis(nn.Module): # Discriminator network based on FoldNet
         cov = torch.matmul(knn_x.transpose(2, 3), knn_x).view(b, n, -1)
         x = torch.cat([data, cov], dim=2)
         x=x.permute(0,2,1)
-        x = F.relu(self.bn1(self.conv1(x)))
-        x = F.relu(self.bn2(self.conv2(x)))
-        x=x.permute(0,2,1)
-
-        # two consecutive graph layers
-        x = self.graph_encoder1(x)
-        x = self.graph_encoder2(x)
-        x=x.permute(0,2,1)
-        x = self.bn4(self.conv4(x))
+        x = F.relu(self.conv1(x))
+        x = F.relu(self.conv2(x))
+        x = self.conv4(x)
         x = torch.max(x, dim=-1)[0]
         
         return self.fc_encoder2(x)
-    
+
 def knn(x, k):
     """
     Compute k-nearest neighbors for each point in a point cloud.
@@ -192,7 +179,7 @@ class arw_FoldingNet(nn.Module):
         
         xx = np.linspace(-40, 40, 50, dtype=np.float32)
         yy = np.linspace(-60, 60, 50, dtype=np.float32)
-        self.grid = np.meshgrid(xx, yy) 
+        self.grid = np.array(np.meshgrid(xx, yy))
 
         # reshape
         self.grid = torch.Tensor(self.grid).view(2, -1)
@@ -273,7 +260,7 @@ class arw_TRSNet(nn.Module):
         
         xx = np.linspace(-40, 40, 50, dtype=np.float32)
         yy = np.linspace(-60, 60, 50, dtype=np.float32)
-        self.grid = np.meshgrid(xx, yy)
+        self.grid = np.array(np.meshgrid(xx, yy))
 
         # reshape
         self.grid = torch.Tensor(self.grid).view(2, -1)
