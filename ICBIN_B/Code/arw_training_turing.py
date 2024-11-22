@@ -36,17 +36,23 @@ class Chamfer_Loss(nn.Module):
     def compute_loss(self, cloud1, cloud2):
         # Compute squared Euclidean distances using broadcasting
         diff = cloud1.unsqueeze(2) - cloud2.unsqueeze(1) 
-        distances_squared = torch.sum(diff ** 2, dim=-1)  
+        distances_squared = torch.sum(diff ** 2, dim=-1)  # Shape: (B, N, M)
         
-        # Find the mean minimum distance along the second and third dimensions
-        min_distances1, _ = torch.min(distances_squared, dim=2)
-        min_distances2, _ = torch.min(distances_squared, dim=1)
+        # For cloud1 -> cloud2: Retrieve the smallest 3 distances along the M dimension
+        top3_distances1, _ = torch.topk(distances_squared, k=3, dim=2, largest=False)
+        mean_top3_distances1 = torch.mean(top3_distances1, dim=2)  # Mean of the top 3 for each point in cloud1
         
-        # Compute the Chamfer loss as the sum of mean minimum distances
-        mean1 = torch.mean(min_distances1)
-        mean2 = torch.mean(min_distances2)
+        # For cloud2 -> cloud1: Retrieve the smallest 3 distances along the N dimension
+        top3_distances2, _ = torch.topk(distances_squared, k=3, dim=1, largest=False)
+        mean_top3_distances2 = torch.mean(top3_distances2, dim=1)  # Mean of the top 3 for each point in cloud2
         
-        return max(mean1,mean2)
+        # Compute directional means
+        mean1 = torch.mean(mean_top3_distances1)
+        mean2 = torch.mean(mean_top3_distances2)
+        
+        # Return the maximum of the two
+        return torch.max(mean1, mean2)
+
 
 class GAN_Loss(nn.Module):
     def __init__(self):

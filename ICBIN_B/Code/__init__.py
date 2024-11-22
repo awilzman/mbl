@@ -97,10 +97,10 @@ if __name__ == "__main__":
     parser.add_argument('--eval_bs', type=int, default=8, help='eval batch size')
     parser.add_argument('--pint', type=int,default=0)
     parser.add_argument('--noise', type=int,default=3)
-    parser.add_argument('--hidden1', type=int,default=512)
+    parser.add_argument('--hidden1', type=int,default=256)
     parser.add_argument('--hidden2', type=int,default=128)
-    parser.add_argument('--hidden3', type=int,default=256)
-    
+    parser.add_argument('--hidden3', type=int,default=128)
+
     parser.add_argument('--name', type=str,default='')
     parser.add_argument('--loadgen', type=str,default='')
     parser.add_argument('--loaddis', type=str,default='')
@@ -112,8 +112,8 @@ if __name__ == "__main__":
     parser.add_argument('-n','--network', type=str, choices=['trs', 'fold'],
                         help='Network call sign')
     
-    args = parser.parse_args(['--direct','../','-n','fold',
-                              '-v',
+    args = parser.parse_args(['--direct','A:/Work/','-n','fold',
+                              #'-v',
                               '-a',
                               #'--grow',
                               #'--grow_thresh','0.9',
@@ -121,14 +121,14 @@ if __name__ == "__main__":
                               '--batch','32',
                               '-lr','1e-2','--decay','1e-6',
                               '-e','0',
-                              '-t','9',
+                              '-t','90',
                               '--pint','1',
                               '--chpt','0',
                               '--cycles','1',
-                              '--noise','8',
+                              '--noise','4',
                               '--name','_',
-                              '--pc_gen','5',
-                              '--loadgen','gangen_lrg_fold_512_128_256',
+                              '--pc_gen','0',
+                              '--loadgen','',
                               '--loaddis',''])
                     
     #Initialize vars
@@ -198,40 +198,17 @@ if __name__ == "__main__":
     elif args.network == 'fold':
         input_dim = 12
         input2_dim = args.hidden1
-    elif args.network == 'mlp':
-        input_dim = 3
-        input2_dim = args.hidden3
         
     if args.loadgen != '':
         # Extract previous layer states
         state_dict = torch.load(f'{args.direct}Models/{args.loadgen}')
         state = extract_state_lists(state_dict, ['e_layers1','e_layers2','d_layers1','d_layers2'])
-    elif not args.grow:
-        if args.init == 1:
-            state = [[(input_dim,args.hidden3)],
-                     [(input2_dim,args.hidden1)],
-                     [(args.hidden1+2,3)],
-                     [(args.hidden1+3,3)]]
-        elif args.init == 2:
-            state = [[(input_dim,64),(64,args.hidden3)],
-                     [(input2_dim,args.hidden1//4),(args.hidden1//4,args.hidden1)],
-                     [(args.hidden1+2,args.hidden3),(args.hidden3,3)],
-                     [(args.hidden1+3,args.hidden3),(args.hidden3,3)]]
-        elif args.init == 3:
-            state = [[(input_dim,64),(64,64),(64,args.hidden3)],
-                     [(input2_dim,args.hidden1//4),(args.hidden1//4,args.hidden1//2),(args.hidden1//2,args.hidden1),(args.hidden1,args.hidden1)],
-                     [(args.hidden1+2,args.hidden3),(args.hidden3,args.hidden3//2),(args.hidden3//2,args.hidden3//16),(args.hidden3//16,3)],
-                     [(args.hidden1+3,args.hidden3),(args.hidden3,args.hidden3//2),(args.hidden3//2,args.hidden3//16),(args.hidden3//16,3)]]
-    else:
-        state = None
         
     if args.network == 'trs':
         network = networks.arw_TRSNet(args.hidden1,args.hidden3).to(device)
     elif args.network == 'fold':
         network = networks.arw_FoldingNet(args.hidden1,args.hidden3).to(device)
-    elif args.network == 'mlp':
-        network = networks.arw_MLPNet(args.hidden1,args.hidden3,state).to(device)
-            
+        
     if n_gpus > 1:
         network = torch.nn.DataParallel(network)
         
@@ -242,40 +219,43 @@ if __name__ == "__main__":
         import open3d as o3d
         import pointcloud_handler as pch
         import pandas as pd
-        def set_point_cloud_color(point_cloud, gray_value):
-            # Ensure the color array matches the number of points
-            gray_color = np.tile([gray_value, gray_value, gray_value], (len(point_cloud.points), 1))
-            point_cloud.colors = o3d.utility.Vector3dVector(gray_color)
-        
-        point_cloud = o3d.geometry.PointCloud()
+        def set_point_cloud_color(point_cloud, color):
+            point_cloud.colors = o3d.utility.Vector3dVector(np.tile(color, (len(point_cloud.points), 1)))
+        color1 = np.array([0.229, 0.298, 0.512])
+        color2 = np.array([0.728, 0.440, 0.145])
+        color3 = np.array([0.598, 0.770, 0.344]) 
         bonetest = torch.FloatTensor(bone).to(device)
-        
+
+        # Prepare the original, reconstructed, and fake point clouds
+        point_cloud1 = o3d.geometry.PointCloud()
+        point_cloud1.points = o3d.utility.Vector3dVector(bonetest.cpu().detach().numpy())
+        set_point_cloud_color(point_cloud1, color=color1)
+    
+        # Generate fake point clouds using the network
+        noise = torch.randn(1, args.hidden1, device=device)
         with torch.no_grad():
+            fake2 = network.decode(noise, num_points)
             test = network.encode(bonetest.unsqueeze(0))
             fake = network.decode(test, num_points)
-            
-        # Original bone point cloud
-        point_cloud.points = o3d.utility.Vector3dVector(bonetest.cpu().detach().numpy())
-        set_point_cloud_color(point_cloud, gray_value=0.5)
-        o3d.visualization.draw_geometries([point_cloud])
+    
+        # Reconstructed point cloud
+        point_cloud2 = o3d.geometry.PointCloud()
+        point_cloud2.points = o3d.utility.Vector3dVector(fake.cpu().detach().numpy().squeeze(0))
+        set_point_cloud_color(point_cloud2, color=color2)
+    
+        # Fake point cloud
+        point_cloud3 = o3d.geometry.PointCloud()
+        point_cloud3.points = o3d.utility.Vector3dVector(fake2.cpu().detach().numpy().squeeze(0))
+        set_point_cloud_color(point_cloud3, color=color3)
+    
+        # Display all point clouds in a single window
+        o3d.visualization.draw_geometries([point_cloud1, point_cloud2, point_cloud3])
         
-        # Reconstructed
-        point_cloud = o3d.geometry.PointCloud()
-        point_cloud.points = o3d.utility.Vector3dVector(fake.cpu().detach().numpy().squeeze(0))
-        set_point_cloud_color(point_cloud, gray_value=0.4)
-        o3d.visualization.draw_geometries([point_cloud])
-        
-        # Fake
-        noise = torch.randn(1, test.shape[1], device=device)
-        with torch.no_grad():
-            fake = network.decode(noise, num_points)
-        fake = fake.cpu().detach().numpy()
-        point_cloud = o3d.geometry.PointCloud()
-        point_cloud.points = o3d.utility.Vector3dVector(fake.squeeze(0))
-        set_point_cloud_color(point_cloud, gray_value=0.3)
-        o3d.visualization.draw_geometries([point_cloud])
         
         if args.pc_gen > 0:
+            good_set = []
+            vnov_set = []
+            bad_set = []
             noise = torch.randn(args.pc_gen, test.shape[1], device=device)
             with torch.no_grad():
                 fake = network.decode(noise, num_points)
@@ -286,10 +266,20 @@ if __name__ == "__main__":
                 # Flatten each generated point cloud (num_points, 3)
                 points = fake[i]
                 points = pd.DataFrame(points, columns=['x', 'y', 'z'])
-                points, _ = pch.inc_PCA(points)
-                pch.create_stl(points,
-                               f'{args.direct}Data/Generated/{args.loadgen[:-4]}_{i}.stl')
-                
+                #points, _ = pch.inc_PCA(points)
+                vnv = pch.create_stl(points,
+                                     f'{args.direct}Data/Generated/{args.loadgen[:-4]}_{i}.stl',
+                                     16,False)
+                if vnv > 0:
+                    good_set.append(noise)
+                elif vnv == 0:
+                    vnov_set.append(noise)
+                else:
+                    bad_set.append(noise)                   
+            bad_set = np.array([n.detach().cpu().numpy() for n in bad_set])
+            vnov_set = np.array([n.detach().cpu().numpy() for n in vnov_set])
+            good_set = np.array([n.detach().cpu().numpy() for n in good_set])
+            
     if args.grow:
         perc_thresh = int(args.grow_thresh*100)
         perc_width = int(args.grow_width*100)
