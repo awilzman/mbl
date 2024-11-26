@@ -11,47 +11,73 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 
-class jarvis(nn.Module): # Discriminator network
+class jarvis(nn.Module):  # Discriminator network
     def __init__(self, insize):
         super(jarvis, self).__init__()
-        self.activate = nn.ReLU()
-        h3=16
-        self.k=16
-        self.conv1 = nn.Conv1d(12, h3, 1)
-        self.conv2 = nn.Conv1d(h3, h3, 1)
+        self.k = 16
         
-        self.conv4 = nn.Conv1d(h3, insize, 1)
+        # Convolutional layers with BatchNorm
+        h3 = 32
+        self.conv1 = nn.Sequential(
+            nn.Conv1d(12, h3, 1),
+            nn.BatchNorm1d(h3),
+            nn.ReLU()
+        )
+        self.conv2 = nn.Sequential(
+            nn.Conv1d(h3, h3, 1),
+            nn.BatchNorm1d(h3),
+            nn.ReLU()
+        )
+        self.conv4 = nn.Sequential(
+            nn.Conv1d(h3, insize, 1),
+            nn.BatchNorm1d(insize),
+            nn.ReLU()
+        )
+        
+        # Fully connected layers with BatchNorm
         self.fc_encoder2 = nn.Sequential(
-            nn.Linear(insize, insize//2),
-            self.activate,
-            nn.Linear(insize//2, insize//4),
-            self.activate,
-            nn.Linear(insize//4, insize//8),
-            self.activate,
-            nn.Linear(insize//8, insize//16),
-            self.activate,
-            nn.Linear(insize//16, 4),
+            nn.Linear(insize, insize // 2),
+            nn.BatchNorm1d(insize // 2),
+            nn.ReLU(),
+            nn.Linear(insize // 2, insize // 4),
+            nn.BatchNorm1d(insize // 4),
+            nn.ReLU(),
+            nn.Linear(insize // 4, insize // 8),
+            nn.BatchNorm1d(insize // 8),
+            nn.ReLU(),
+            nn.Linear(insize // 8, 4),
             nn.Tanh(),
             nn.Linear(4, 1),
-            nn.Sigmoid())
-    
+            nn.Sigmoid()
+        )
+
     def forward(self, data):
-        b,n,c=data.size()
-        knn_idx = knn(data, k=self.k)
-        knn_x = index_points(data, knn_idx)  # (B, N, 16, 3)
+        b, n, c = data.size()
+
+        # Compute k-NN and covariance
+        knn_idx = knn(data, k=self.k)  # Custom k-NN function
+        knn_x = index_points(data, knn_idx)  # (B, N, k, C)
         mean = torch.mean(knn_x, dim=2, keepdim=True)
         knn_x = knn_x - mean
-        batch_size, num_nodes, num_features = data.size()
-        cov = torch.matmul(knn_x.transpose(2, 3), knn_x).view(b, n, -1)
-        x = torch.cat([data, cov], dim=2)
-        x=x.permute(0,2,1)
-        x = F.relu(self.conv1(x))
-        x = F.relu(self.conv2(x))
-        x = self.conv4(x)
-        x = torch.max(x, dim=-1)[0]
-        
-        return self.fc_encoder2(x)
+        cov = torch.matmul(knn_x.transpose(2, 3), knn_x).view(b, n, -1)  # Covariance matrix flattened
 
+        # Concatenate original data and covariance
+        x = torch.cat([data, cov], dim=2).permute(0, 2, 1)  # Shape (B, C, N)
+
+        # Apply convolutional layers
+        x = self.conv1(x)
+        x = self.conv2(x)
+        x = self.conv4(x)
+
+        # Global max pooling
+        x = torch.max(x, dim=-1)[0]  # Shape (B, insize)
+
+        # Fully connected layers
+        x = self.fc_encoder2(x)
+
+        return x
+
+    
 def knn(x, k):
     """
     Compute k-nearest neighbors for each point in a point cloud.
@@ -179,7 +205,7 @@ class arw_FoldingNet(nn.Module):
         
         xx = np.linspace(-40, 40, 50, dtype=np.float32)
         yy = np.linspace(-60, 60, 50, dtype=np.float32)
-        self.grid = np.array(np.meshgrid(xx, yy))
+        self.grid = np.array(np.meshgrid(xx, yy)) 
 
         # reshape
         self.grid = torch.Tensor(self.grid).view(2, -1)
@@ -260,7 +286,7 @@ class arw_TRSNet(nn.Module):
         
         xx = np.linspace(-40, 40, 50, dtype=np.float32)
         yy = np.linspace(-60, 60, 50, dtype=np.float32)
-        self.grid = np.array(np.meshgrid(xx, yy))
+        self.grid = np.meshgrid(xx, yy)
 
         # reshape
         self.grid = torch.Tensor(self.grid).view(2, -1)

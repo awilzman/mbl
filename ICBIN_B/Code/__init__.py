@@ -97,7 +97,7 @@ if __name__ == "__main__":
     parser.add_argument('--eval_bs', type=int, default=8, help='eval batch size')
     parser.add_argument('--pint', type=int,default=0)
     parser.add_argument('--noise', type=int,default=3)
-    parser.add_argument('--hidden1', type=int,default=256)
+    parser.add_argument('--hidden1', type=int,default=512)
     parser.add_argument('--hidden2', type=int,default=128)
     parser.add_argument('--hidden3', type=int,default=128)
 
@@ -113,22 +113,22 @@ if __name__ == "__main__":
                         help='Network call sign')
     
     args = parser.parse_args(['--direct','A:/Work/','-n','fold',
-                              #'-v',
-                              '-a',
+                              '-v',
+                              '-g',
                               #'--grow',
                               #'--grow_thresh','0.9',
                               '-i','1',# 3 different layer start combos
                               '--batch','32',
                               '-lr','1e-2','--decay','1e-6',
                               '-e','0',
-                              '-t','90',
+                              '-t','200',
                               '--pint','1',
                               '--chpt','0',
                               '--cycles','1',
                               '--noise','4',
                               '--name','_',
-                              '--pc_gen','0',
-                              '--loadgen','',
+                              '--pc_gen','20',
+                              '--loadgen','diff_med_fold_512_128_128',
                               '--loaddis',''])
                     
     #Initialize vars
@@ -232,9 +232,9 @@ if __name__ == "__main__":
         set_point_cloud_color(point_cloud1, color=color1)
     
         # Generate fake point clouds using the network
-        noise = torch.randn(1, args.hidden1, device=device)
+        noise1 = torch.randn(1, args.hidden1, device=device)
         with torch.no_grad():
-            fake2 = network.decode(noise, num_points)
+            fake1 = network.decode(noise1, num_points)
             test = network.encode(bonetest.unsqueeze(0))
             fake = network.decode(test, num_points)
     
@@ -245,11 +245,11 @@ if __name__ == "__main__":
     
         # Fake point cloud
         point_cloud3 = o3d.geometry.PointCloud()
-        point_cloud3.points = o3d.utility.Vector3dVector(fake2.cpu().detach().numpy().squeeze(0))
+        point_cloud3.points = o3d.utility.Vector3dVector(fake1.cpu().detach().numpy().squeeze(0))
         set_point_cloud_color(point_cloud3, color=color3)
     
         # Display all point clouds in a single window
-        o3d.visualization.draw_geometries([point_cloud1, point_cloud2, point_cloud3])
+        o3d.visualization.draw_geometries([point_cloud2, point_cloud3])
         
         
         if args.pc_gen > 0:
@@ -268,7 +268,7 @@ if __name__ == "__main__":
                 points = pd.DataFrame(points, columns=['x', 'y', 'z'])
                 #points, _ = pch.inc_PCA(points)
                 vnv = pch.create_stl(points,
-                                     f'{args.direct}Data/Generated/{args.loadgen[:-4]}_{i}.stl',
+                                     f'{args.direct}Data/Generated/unprocessed/{args.loadgen[:-4]}/{args.loadgen[:-4]}_{i}.stl',
                                      16,False)
                 if vnv > 0:
                     good_set.append(noise)

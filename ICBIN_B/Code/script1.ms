@@ -90,7 +90,7 @@ fn processOBJFiles inputFolder modelName outputFolder relaxIterations maxEdgeLen
 -- Parameters
 inputFolderPath = @"Z:\_PROJECTS\Deep_Learning_HRpQCT\ICBIN_B\Data\Generated\unprocessed"
 outputFolderPath = @"Z:\_PROJECTS\Deep_Learning_HRpQCT\ICBIN_B\Data\Generated\tet4"
-modelName = "gangen_lrg_fold_512_128_256"  -- The name of the nested model folder
+modelName = "diff_med_fold_512_128_128"  -- The name of the nested model folder
 relaxIterations = 5
 maxEdgeLength = 2
 

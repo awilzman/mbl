@@ -30,7 +30,10 @@ def inc_PCA(bone):
     return bone, rotation_matrix
 
 def create_stl(points, filename, depth=16, view=False):
-
+    folder = os.path.dirname(filename)
+    if folder and not os.path.exists(folder):
+        os.makedirs(folder)
+        
     # Determine the bounds of the point cloud
     pcd = o3d.geometry.PointCloud()
     pcd.points = o3d.utility.Vector3dVector(np.array(points))
