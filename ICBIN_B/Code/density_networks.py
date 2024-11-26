@@ -22,9 +22,9 @@ class tet10_encoder(nn.Module):
         # Output size depends on whether the LSTM is bidirectional
         fc_input_size = hidden_size * 2 if bidirectional else hidden_size
         
-        self.conv = nn.Conv1d(fc_input_size,hidden_size,1)
+        self.conv1 = nn.Conv1d(fc_input_size,hidden_size,1)
         self.bn = nn.BatchNorm1d(hidden_size)
-        self.fc = nn.Linear(hidden_size,hidden_size)
+        self.conv2 = nn.Conv1d(hidden_size,hidden_size,1)
         
     def forward(self, x):
         # Calculate sequence lengths, assuming padding value is 0
@@ -43,9 +43,8 @@ class tet10_encoder(nn.Module):
             x = torch.cat((x[:, :, :self.lstm.hidden_size],
                            x[:, :, self.lstm.hidden_size:]), dim=2)
         x=x.permute(0,2,1)
-        x = self.bn(self.conv(x))
+        x = self.conv2(self.bn(self.conv1(x)))
         x=x.permute(0,2,1)
-        x = F.relu(self.fc(x))
         
         return x, lengths
     

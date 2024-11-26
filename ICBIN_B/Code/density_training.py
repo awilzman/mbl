@@ -135,41 +135,45 @@ def plot_loss(title, train_losses, old_losses=None):
     plt.grid(True)
     plt.show()
 
-def show_bone(bone,scale):
+def show_bone(bone, scale):
     import pyvista as pv
     import numpy as np
+
     points = []
     cells = []
-    
+
+    # Generate points and cells for the TET10 elements
     for elem in bone[0]:
         nodes = elem[:30].reshape(10, 3)  # 10 nodes for each tetrahedron
         points.extend(nodes)
-        start_idx = len(points) - 10  
+        start_idx = len(points) - 10
         cells.append([10] + list(range(start_idx, start_idx + 10)))
 
     points = np.array(points)
-    
+
+    # Define cell types
     cell_type = np.full(len(cells), pv.CellType.TETRA, dtype=np.int8)
     grid = pv.UnstructuredGrid(cells, cell_type, points)
-    grid.cell_data['E11'] = bone[1]*scale
-    
-    plotter = pv.Plotter()
-    slices = grid.slice_orthogonal(x=0, y=0, z=0)
-    plotter.add_mesh(slices, scalars='E11', show_edges=True, 
-                     cmap='viridis',interpolate_before_map=False)
-    
-    # Create and show random slices
-    num_slices = 20 
-    for i in range(num_slices):
-        x = (np.random.rand(1)-0.5)/100
-        y = (np.random.rand(1)-0.5)/100
-        z = (np.random.rand(1)-0.5)/100
+    grid.cell_data['E11'] = bone[1] * scale
 
-        random_slice = grid.slice_orthogonal(x=x, y=y, z=z)
-        plotter.add_mesh(random_slice, scalars='E11', cmap='viridis',
-                         interpolate_before_map=False)
-        
+    # Create a clipping plane to remove 1/4 of the bone
+    clip_plane = grid.center + np.array([0.25, 0, 0])  # Adjust the cutting location
+    clipped_grid = grid.clip(normal=(1, 0, 0), origin=clip_plane)  # Cut along the x-axis
+
+    # Optionally add another plane to refine the cut (exposing 3/4)
+    second_clip_plane = grid.center + np.array([-0.25, 0, 0])
+    clipped_grid = clipped_grid.clip(normal=(-1, 0, 0), origin=second_clip_plane)
+
+    # Plot the clipped bone with scalars
+    plotter = pv.Plotter()
+    slices = clipped_grid.slice_orthogonal(x=0, y=0, z=0)
+    plotter.add_mesh(slices, scalars='E11', show_edges=True,
+                     cmap='viridis', interpolate_before_map=False)
+
+    # Add an interactive view to inspect the bone
+    plotter.add_axes()
     plotter.show()
+
     
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

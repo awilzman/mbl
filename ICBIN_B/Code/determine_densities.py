@@ -60,6 +60,9 @@ def repack_nodes(nodes):
 
 def write_inp(output,output_file):
     # Writes a list (output) to a file (output_file)
+    output_dir = os.path.dirname(output_file)
+    if output_dir and not os.path.exists(output_dir):
+        os.makedirs(output_dir)
     if '.' not in output_file:
         output_file += '.inp' # Default to .inp file if not specified
     output = [str(elem) for elem in output]
@@ -71,6 +74,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('-d','--direct', type=str, default='')
     parser.add_argument('-l','--load', type=str, default='')
+    parser.add_argument('-f','--file', type=str, default='')
     parser.add_argument('--hidden1', type=int, required=True)
     parser.add_argument('--layers', type=int, required=True)
     parser.add_argument('-b','--bidir', action='store_true')
@@ -84,9 +88,10 @@ if __name__ == "__main__":
     
     args = parser.parse_args(['-d', 'A:/Work/','-v',
                               #'-b',
-                              '-l','newnew',
-                              '--hidden1', '32',
-                              '--layers', '2'
+                              '-l','dimp',
+                              '-f','diff_med_fold_512_128_128',
+                              '--hidden1','64',
+                              '--layers', '4'
                               ])
     
     if torch.cuda.is_available():
@@ -102,14 +107,16 @@ if __name__ == "__main__":
             args.load += '.pth'
     
     #load fabricated inps
-    fab_data = os.path.join(args.direct, 'Data/inps/Fabricated/geo_only')
+    fab_data = os.path.join(args.direct, 'Data/Generated/tet10',args.file)
     inp_files = [f for f in os.listdir(fab_data) if f.endswith('.inp')]
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     encoder = dnets.tet10_encoder(args.hidden1, args.layers, args.bidir).to(device)
     densifier = dnets.tet10_densify(args.hidden1).to(device)
     
-    checkpoint = torch.load(os.path.join(args.direct, 'Models', args.load))
+    # Load only model weights
+    checkpoint = torch.load(os.path.join(args.direct, 'Models', args.load), weights_only=True)
+
     encoder.load_state_dict(checkpoint['encoder_state_dict'])
     densifier.load_state_dict(checkpoint['densifier_state_dict'])
     scale_factor= checkpoint['scale_factor']
@@ -181,7 +188,7 @@ if __name__ == "__main__":
         
         if args.visualize:
             dtrn.show_bone([X,E_out],scale_factor)
-            #%%
+            
         #calculate real e11 with scale factor and assign anisotropy
         #create args.matnum bins of material definitions
         #assign each element ID to a bin
@@ -293,9 +300,9 @@ if __name__ == "__main__":
                         
         active_elements = [int(ele.split(',')[0]) for ele in inp_elements[1:] if all(
             node in active_nodes for node in [int(i) for i in ele.split(',')[1:]])]
-        
+        zerod_anodes = np.array(active_nodes) - 1
         # If more surface points exist on positive axis bend_dir is positive
-        y_check = [float(nd[bend_dir]) for nd in node_data[active_nodes]]
+        y_check = [float(nd[bend_dir]) for nd in node_data[zerod_anodes]]
         y_check = sum(y_check)
         
         bend_neg = y_check < 0
@@ -303,8 +310,8 @@ if __name__ == "__main__":
         # Find bend load node by finding the minimum {bend_dir} point,
         # among the nodes on the distal side,
         # if {bend_dir} is positive, or the maximum if it is negative
-        max_y = max(node_data[active_nodes,bend_dir])
-        min_y = min(node_data[active_nodes,bend_dir])
+        max_y = max(node_data[zerod_anodes,bend_dir])
+        min_y = min(node_data[zerod_anodes,bend_dir])
         
         if bend_neg:
             bend_load_node = int([nd[0] for nd in node_data if nd[bend_dir]==max_y][0])
@@ -430,5 +437,5 @@ if __name__ == "__main__":
                      inp_orient+inp_newmatsets+inp_act_ele+inp_endpart+
                      inp_load_node+inp_bend_node+inp_fixed_nodes+inp_active_nodes+
                      inp_coupling+inp_endass+inp_materials+inp_bc+inp_steps)
-        new_inp_file = f'{args.direct}Data/inps/Fabricated/{inp_file_idx}.inp'
+        new_inp_file = f'{args.direct}Data/inps/Fabricated/{args.file}/{inp_file[:-4]}.inp'
         write_inp(final_inp,new_inp_file)
