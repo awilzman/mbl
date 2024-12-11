@@ -56,7 +56,7 @@ def create_stl(points, filename, depth=16, view=False):
     if not (mesh.is_edge_manifold() and mesh.is_watertight()):
         print("didn't work")
         return -1 # Exit if mesh is not solid
-
+    
     # Optional visualization step
     if view:
         o3d.visualization.draw_geometries([mesh], window_name="Mesh Preview")
@@ -67,8 +67,16 @@ def create_stl(points, filename, depth=16, view=False):
             print("Mesh not saved.")
             return 0 # Exit function if user vetoes
         
-    o3d.io.write_triangle_mesh(filename, mesh, write_ascii=False)
+    o3d.io.write_triangle_mesh(filename+'.stl', mesh, write_ascii=False)
     
+    vertices = np.asarray(mesh.vertices)
+    faces = np.asarray(mesh.triangles)
+    faces = np.hstack([[3] + face.tolist() for face in faces])
+    surface_mesh = pv.PolyData(vertices, faces)
+    tetra_mesh = surface_mesh.delaunay_3d()
+    if view:
+        tetra_mesh.plot(show_edges=True)
+    tetra_mesh.save(filename+'.vtk')
     return 1
     
 def convert_to_tet10(points, tetrahedra, filtered_densities):
