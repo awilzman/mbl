@@ -112,7 +112,7 @@ if __name__ == "__main__":
     parser.add_argument('-n','--network', type=str, choices=['trs', 'fold'],
                         help='Network call sign')
     
-    args = parser.parse_args(['--direct','A:/Work/','-n','fold',
+    args = parser.parse_args(['--direct','../','-n','fold',
                               '-v',
                               '-g',
                               #'--grow',
@@ -121,13 +121,13 @@ if __name__ == "__main__":
                               '--batch','32',
                               '-lr','1e-2','--decay','1e-6',
                               '-e','0',
-                              '-t','200',
+                              '-t','20',
                               '--pint','1',
                               '--chpt','0',
                               '--cycles','1',
                               '--noise','4',
                               '--name','_',
-                              '--pc_gen','20',
+                              '--pc_gen','5',
                               '--loadgen','diff_med_fold_512_128_128',
                               '--loaddis',''])
                     
@@ -268,8 +268,8 @@ if __name__ == "__main__":
                 points = pd.DataFrame(points, columns=['x', 'y', 'z'])
                 #points, _ = pch.inc_PCA(points)
                 vnv = pch.create_stl(points,
-                                     f'{args.direct}Data/Generated/unprocessed/{args.loadgen[:-4]}/{args.loadgen[:-4]}_{i}.stl',
-                                     16,False)
+                                     f'{args.direct}Data/Generated/unprocessed/{args.loadgen[:-4]}/{args.loadgen[:-4]}_{i}',
+                                     16,True)
                 if vnv > 0:
                     good_set.append(noise)
                 elif vnv == 0:
