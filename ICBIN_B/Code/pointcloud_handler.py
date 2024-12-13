@@ -16,6 +16,7 @@ from alphashape import alphashape
 from scipy.spatial import Delaunay
 import meshio
 import pyvista as pv
+import gmsh
 
 #%% init
 def inc_PCA(bone):
@@ -30,19 +31,24 @@ def inc_PCA(bone):
     return bone, rotation_matrix
 
 def create_stl(points, filename, depth=16, view=False):
+    
+    # Ensure filename has no extension
+    filename = os.path.splitext(filename)[0]
     folder = os.path.dirname(filename)
     if folder and not os.path.exists(folder):
         os.makedirs(folder)
-        
-    # Determine the bounds of the point cloud
+    
+    a = [int(b.split('_')[-1][:-4]) for b in os.listdir(folder)]
+    base_name = '_'.join(os.listdir(folder)[0][:-4].split('_')[:-1])
+    b = 1+max(a)
+    filename =f"{folder}/{base_name}_{b}"
+    
+    # Step 1: Point cloud to surface mesh (Poisson reconstruction)
     pcd = o3d.geometry.PointCloud()
     pcd.points = o3d.utility.Vector3dVector(np.array(points))
-    
-    # Estimate normals
     pcd.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=2, max_nn=30))
-    pcd.orient_normals_consistent_tangent_plane(k=30)  # Ensure normals are consistently oriented
+    pcd.orient_normals_consistent_tangent_plane(k=30)
     
-    # Perform Poisson surface reconstruction
     mesh, densities = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(pcd, depth=depth)
     mesh = mesh.remove_unreferenced_vertices()
     mesh = mesh.remove_degenerate_triangles()
@@ -54,29 +60,70 @@ def create_stl(points, filename, depth=16, view=False):
     
     mesh.compute_vertex_normals()
     if not (mesh.is_edge_manifold() and mesh.is_watertight()):
-        print("didn't work")
-        return -1 # Exit if mesh is not solid
+        print("Mesh is not watertight or edge-manifold. Exiting.")
+        return -1
     
-    # Optional visualization step
+    # Optional visualization of the surface mesh
     if view:
         o3d.visualization.draw_geometries([mesh], window_name="Mesh Preview")
-
-        # Request user confirmation
         confirm = input("Save the mesh as STL? (y/n): ")
         if confirm.lower() != 'y':
             print("Mesh not saved.")
-            return 0 # Exit function if user vetoes
-        
-    o3d.io.write_triangle_mesh(filename+'.stl', mesh, write_ascii=False)
+            return 0
     
+    # Save the surface mesh as STL
+    o3d.io.write_triangle_mesh(filename + '.stl', mesh, write_ascii=False)
+    
+    # Step 2: Convert Open3D mesh to GMSH mesh format
     vertices = np.asarray(mesh.vertices)
     faces = np.asarray(mesh.triangles)
-    faces = np.hstack([[3] + face.tolist() for face in faces])
-    surface_mesh = pv.PolyData(vertices, faces)
-    tetra_mesh = surface_mesh.delaunay_3d()
+    
+    gmsh.initialize()
+    gmsh.option.setNumber('Mesh.Optimize', 2)
+    # gmsh.option.setNumber('Mesh.MeshSizeFactor', 0.002)
+    # gmsh.option.setNumber("Mesh.ElementOrder", 2)
+    
+    gmsh.model.add("TetrahedralMesh")
+    
+    # Add points to GMSH
+    gmsh_points = []
+    for i, (x, y, z) in enumerate(vertices):
+        gmsh_points.append(gmsh.model.geo.addPoint(x, y, z))
+    
+    # Add surface (triangular) faces to GMSH
+    gmsh_surfaces = []
+    for face in faces:
+        p1, p2, p3 = [gmsh_points[i] for i in face]
+        line1 = gmsh.model.geo.addLine(p1, p2)
+        line2 = gmsh.model.geo.addLine(p2, p3)
+        line3 = gmsh.model.geo.addLine(p3, p1)
+        wire = gmsh.model.geo.addCurveLoop([line1, line2, line3])
+        surface = gmsh.model.geo.addPlaneSurface([wire])
+        gmsh_surfaces.append(surface)
+    
+    gmsh.model.geo.synchronize()  # Sync all points, lines, and surfaces
+    
+    surface_loop = gmsh.model.geo.addSurfaceLoop(gmsh_surfaces)
+    volume = gmsh.model.geo.addVolume([surface_loop])
+    gmsh.model.geo.synchronize()  # Sync everything again
+    
+    gmsh.model.mesh.setTransfiniteAutomatic()
+    
+    # Generate the mesh
+    gmsh.model.mesh.generate(3)
+    
+    # Export the resulting tetrahedral mesh as a VTK file
+    
+    
+    gmsh.write(filename + ".vtk")
+    
+    # Optionally view the mesh using GMSH's viewer
     if view:
-        tetra_mesh.plot(show_edges=True)
-    tetra_mesh.save(filename+'.vtk')
+        gmsh.fltk.run()
+    
+    gmsh.finalize()
+    
+    print(f"Mesh saved as {filename}.stl and {filename}.vtk")
     return 1
     
 def convert_to_tet10(points, tetrahedra, filtered_densities):

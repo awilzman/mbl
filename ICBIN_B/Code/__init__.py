@@ -127,7 +127,7 @@ if __name__ == "__main__":
                               '--cycles','1',
                               '--noise','4',
                               '--name','_',
-                              '--pc_gen','5',
+                              '--pc_gen','300',
                               '--loadgen','diff_med_fold_512_128_128',
                               '--loaddis',''])
                     
@@ -249,8 +249,7 @@ if __name__ == "__main__":
         set_point_cloud_color(point_cloud3, color=color3)
     
         # Display all point clouds in a single window
-        o3d.visualization.draw_geometries([point_cloud2, point_cloud3])
-        
+        o3d.visualization.draw_geometries([point_cloud2, point_cloud3])        
         
         if args.pc_gen > 0:
             good_set = []
@@ -269,7 +268,7 @@ if __name__ == "__main__":
                 #points, _ = pch.inc_PCA(points)
                 vnv = pch.create_stl(points,
                                      f'{args.direct}Data/Generated/unprocessed/{args.loadgen[:-4]}/{args.loadgen[:-4]}_{i}',
-                                     16,True)
+                                     16,False)
                 if vnv > 0:
                     good_set.append(noise)
                 elif vnv == 0:
