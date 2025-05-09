@@ -8,15 +8,15 @@ import numpy as np
 import pandas as pd
 import os
 import argparse
+from sklearn.model_selection import KFold
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 import matplotlib.pyplot as plt
-import matplotlib.cm as cm
-import matplotlib.colors as mcolors
 import statsmodels.api as sm
 from instron_read import TestProcessor
 import seaborn as sns
-
+from scipy.stats import kendalltau
+    
 class StatsDoer:
     def __init__(self, directory, bone_map, items=None, save=True, plot=False):
         self.directory = directory
@@ -25,8 +25,8 @@ class StatsDoer:
         self.plot = plot
         self.bone_map = bone_map
         self.data = None
-
-    def grab_data(self, sides=('L', 'R')):
+        
+    def grab_fe_data(self, sides=('L', 'R')):
         data = []
         for side in sides:
             for item in self.items:
@@ -34,11 +34,12 @@ class StatsDoer:
                 if os.path.isfile(file):
                     ram = pd.read_csv(file)
                     for _, r in ram.iterrows():
+                        
                         segments = r['Step Key'].split('_')
                         mtno = self.bone_map.get(segments[0], 0)
                         load = segments[2]
                         angle = int(segments[-1][:-3]) if 'deg' in segments[-1] else 0
-
+                        
                         data.append({
                             'ID': item,
                             'MtNo': mtno,
@@ -48,17 +49,28 @@ class StatsDoer:
                             'Max Principal Strain': r['Max Principal Strain'],
                             'Min Principal Strain': r['Min Principal Strain'],
                             'Max von Mises Stress': r['Max von Mises Stress'],
-                            'Tsai Wu Strained Volume': r['Tsai Wu Strained Volume'],
+                            'Tsai-Wu Strained Volume': r['Tsai-Wu Strained Volume'],
                             'von Mises Stressed Volume': r['von Mises Stressed Volume'],
-                            'Max Tsai Wu Ratio': r['Max Tsai Wu Ratio'],
-                            'Max von Mises Ratio': r['Max von Mises Ratio'],
-                            'Max Displacement': r['Max Displacement']
+                            'von Mises Strained Volume': r['von Mises Strained Volume'],
+                            'Max Displacement': r['Max Displacement'],
+                            'Total Volume': r['Total Volume']
                         })
-        return pd.DataFrame(data)
+        df = pd.DataFrame(data)        
+        for angle in [0, 30]:
+            subset = df[df['Angle deg'] == angle]
+            if not subset.empty:
+                print(f"Angle = {angle}°")
+                for col in ['Max Principal Strain', 'Min Principal Strain', 'Tsai-Wu Strained Volume', 
+                            'von Mises Stressed Volume', 'von Mises Strained Volume']:
+                    mean_val = subset[col].mean()
+                    std_val = subset[col].std()
+                    print(f"  {col}: Mean = {mean_val:.6f}, Std = {std_val:.6f}")
+                
+        return df
 
     def load_computer(self, ram, target):
         X = np.array(ram['Load N']).reshape(-1, 1)
-        y = abs(np.array(ram['Tsai Wu Strained Volume']).reshape(-1, 1))
+        y = abs(np.array(ram['Tsai-Wu Strained Volume']).reshape(-1, 1))
 
         reg = LinearRegression().fit(y, X)
 
@@ -67,10 +79,32 @@ class StatsDoer:
         return round(max_tw)
 
     def define_loadcases(self, load_case, mtnos=(2, 3, 4), sides=('L', 'R')):
-        data_df = self.grab_data(sides)
+        data_df = self.grab_fe_data(sides)
         load_case_final = pd.DataFrame()
+        
+        demo = {
+            "2108482": {"Age": 93, "Height_cm": 65 * 2.54, "Weight_kg": 178 / 2.2, "Sex": 0},
+            "2202457M": {"Age": 97, "Height_cm": 63 * 2.54, "Weight_kg": 82 / 2.2, "Sex": 0},
+            "2202474M": {"Age": 83, "Height_cm": 63 * 2.54, "Weight_kg": 117 / 2.2, "Sex": 0},
+            "2202556M": {"Age": 65, "Height_cm": 63 * 2.54, "Weight_kg": 169 / 2.2, "Sex": 0},
+            "2203581M": {"Age": 24, "Height_cm": 64 * 2.54, "Weight_kg": 136 / 2.2, "Sex": 0},
+            "2204751M": {"Age": 40, "Height_cm": 71 * 2.54, "Weight_kg": 189 / 2.2, "Sex": 1},
+            "2204828M": {"Age": 60, "Height_cm": 69 * 2.54, "Weight_kg": 140 / 2.2, "Sex": 1},
+            "2204869M": {"Age": 90, "Height_cm": 70 * 2.54, "Weight_kg": 195 / 2.2, "Sex": 1},
+            "2205030M": {"Age": 74, "Height_cm": 61 * 2.54, "Weight_kg": 95 / 2.2, "Sex": 0},
+            "2205033M": {"Age": 82, "Height_cm": 72 * 2.54, "Weight_kg": 157 / 2.2, "Sex": 1},
+            "2205041M": {"Age": 69, "Height_cm": 66 * 2.54, "Weight_kg": 153 / 2.2, "Sex": 0},
+            "2205048M": {"Age": 81, "Height_cm": 71 * 2.54, "Weight_kg": 163 / 2.2, "Sex": 1},
+            "2205976M": {"Age": 62, "Height_cm": 66 * 2.54, "Weight_kg": 191 / 2.2, "Sex": 1},
+            "2206149M": {"Age": 65, "Height_cm": 64 * 2.54, "Weight_kg": 151 / 2.2, "Sex": 0},
+        }
+        
+        demo_df = pd.DataFrame.from_dict(demo, orient="index").reset_index()
+        demo_df.rename(columns={"index": "Foot"}, inplace=True)
+        
         if isinstance(mtnos, int):
             mtnos = (mtnos,)
+            
         for item in self.items:
             for side in sides:
                 for mtno in mtnos:
@@ -89,59 +123,59 @@ class StatsDoer:
                     if not pd.isna(ram2[var_].values[0]):
                         load_target = ram2[var_].values[0]
                     else:
-                        load_target = self.load_computer(ram, 1500 if ram2.iloc[0]['Mag'] == 'High' else 1000)
-                    
+                        #load_target = self.load_computer(ram, 1500 if ram2.iloc[0]['Mag'] == 'High' else 1000)
+                        load_target = 0
+                        
                     X = np.array(ram['Load N'],dtype=float)
 
                     idx = np.searchsorted(X, load_target)
                     
                     #Load target must be included in the FE load list
                     
-                    vm_strvol = ram.iloc[idx]['von Mises Stressed Volume']
-                    tw_strvol = ram.iloc[idx]['Tsai Wu Strained Volume']
+                    vm_str_o_vol = ram.iloc[idx]['von Mises Stressed Volume']
+                    vm_str_e_vol = ram.iloc[idx]['von Mises Strained Volume']
+                    tw_strvol = ram.iloc[idx]['Tsai-Wu Strained Volume']
                     pred_displ = ram.iloc[idx]['Max Displacement']
                     min_strain = ram.iloc[idx]['Min Principal Strain']
                     max_strain = ram.iloc[idx]['Max Principal Strain']
-                    tw_ratio = ram.iloc[idx]['Max Tsai Wu Ratio']
-                    vm_ratio = ram.iloc[idx]['Max von Mises Ratio']
+                    tot_vol = ram.iloc[idx]['Total Volume']
                     
                     slope = load_target/pred_displ
                     
                     FL = ram2.iloc[0][f'MT{mtno} Fatigue Life']
-                    C1 = ram2.iloc[0][f'MT{mtno} cyc1']
-                    C2 = ram2.iloc[0][f'MT{mtno} cyc10']
-                    C3 = ram2.iloc[0][f'MT{mtno} cyc100']
-                    C4 = ram2.iloc[0][f'MT{mtno} cyc1000']
-                    C5 = ram2.iloc[0][f'MT{mtno} cyc10000']
+                    C1 = ram2.iloc[0][f'MT{mtno} Initial Stiffness']
+                    C2 = ram2.iloc[0][f'MT{mtno} Maximum Stiffness']
+                    ratio = C2/C1 if C1 != 0 else 0
+                    
                     ram3 = {
                         'Foot': item,
+                        'Age': demo[item]['Age'],
+                        'Sex': demo[item]['Sex'],
                         'Side': side,
                         'Mtno': mtno,
                         'Mag': ram2.iloc[0]['Mag'],
                         'Angle': angle,
                         'Load': load_target,
-                        'Tsai Wu Strained Volume': int(tw_strvol),
-                        'von Mises Stressed Volume': int(vm_strvol),
+                        'Tsai-Wu Strained Volume': tw_strvol,
+                        'von Mises Stressed Volume': vm_str_o_vol,
+                        'von Mises Strained Volume': vm_str_e_vol,
+                        'Total Volume': tot_vol,
                         'Max Principal Strain': max_strain,
                         'Min Principal Strain': min_strain,
-                        'Max Tsai Wu Ratio': tw_ratio,
-                        'Max von Mises Ratio': vm_ratio,
                         'Predicted Displacement': pred_displ,
                         'Predicted Stiffness': slope,
                         'Fatigue Life': FL, 
-                        'cyc1': C1,
-                        'cyc10': C2,
-                        'cyc100': C3,
-                        'cyc1000': C4,
-                        'cyc10000': C5                         
+                        'Initial Stiffness': C1,
+                        'Maximum Stiffness': C2,
+                        'Max Hardening Ratio': ratio
                     }
                     
                     load_case_final = pd.concat((load_case_final,pd.DataFrame([ram3])))
 
                     if self.plot:
                         for col in ram.columns[5:]:
-                            if 'Tsai Wu Strained Volume' in col:
-                                plt.figure()
+                            if 'Volume' in col:
+                                continue# for now...
                             elif col == 'Max Displacement':
                                 plt.figure()
                             else:
@@ -166,164 +200,596 @@ class StatsDoer:
             return pd.DataFrame()
         
         self.data = pd.read_excel(main_file)
+        
+    def tune_parameters(self,fatigue_lives,tw_str_vols,vm_str_o_vols,vm_str_e_vols,tw_exp,vm_exp,lhs_data):
+        
+        self.load_the_cases((2,3,4))
+        
+        model = LinearRegression()
+        tw_mse_1 = []
+        vm_o_mse_1 = []
+        vm_e_mse_1 = []
+        for i, strains in enumerate(lhs_data.T):
+            tw_mse_2 = []
+            vm_o_mse_2 = []
+            vm_e_mse_2 = []
+            
+            tw_str_vol = [np.array(t,dtype='float') for t in tw_str_vols]
+            tw_str_vol = np.array([t[i] for t in tw_str_vol])
+            
+            if i < vm_exp:
+                vm_str_o_vol = [np.array(v,dtype='float') for v in vm_str_o_vols]
+                vm_str_o_vol = np.array([v[i] for v in vm_str_o_vol])
+                
+                vm_str_e_vol = [np.array(v,dtype='float') for v in vm_str_e_vols]
+                vm_str_e_vol = np.array([v[i] for v in vm_str_e_vol])
+            
+            kf = KFold(n_splits=3, shuffle=True, random_state=42)
+            kf_split = kf.split(fatigue_lives)
+            
+            for train_idx, test_idx in kf_split:
+                tw_train, tw_test = tw_str_vol[train_idx], tw_str_vol[test_idx]
+                
+                y_train, y_test = fatigue_lives[train_idx], fatigue_lives[test_idx]
+                y_train = np.log10(y_train)
+                y_test = np.log10(y_test)
+                
+                model.fit(tw_train.reshape(-1,1), y_train.reshape(-1,1))
+                y_pred = model.predict(tw_test.reshape(-1,1))
+                tw_mse_2.append(mean_squared_error(10**y_test, 10**y_pred)**0.5)
+                
+                if i < vm_exp:
+                    vm_train, vm_test = vm_str_o_vol[train_idx], vm_str_o_vol[test_idx]
+                    model.fit(vm_train.reshape(-1,1), y_train.reshape(-1,1))
+                    y_pred = model.predict(vm_test.reshape(-1,1))
+                    vm_o_mse_2.append(mean_squared_error(10**y_test, 10**y_pred)**0.5)
+                    
+                    vm_train, vm_test = vm_str_e_vol[train_idx], vm_str_e_vol[test_idx]
+                    model.fit(vm_train.reshape(-1,1), y_train.reshape(-1,1))
+                    y_pred = model.predict(vm_test.reshape(-1,1))
+                    vm_e_mse_2.append(mean_squared_error(10**y_test, 10**y_pred)**0.5)
+            
+            tw_mse_1.append(np.mean(tw_mse_2))
+            if i < vm_exp:
+                vm_o_mse_1.append(np.mean(vm_o_mse_2))
+                vm_e_mse_1.append(np.mean(vm_e_mse_2))
+        
+        if self.plot:
+            for i in range(5):    
+                fig, ax = plt.subplots(figsize=(22, 16))
+                ax.scatter(lhs_data.iloc[:,i],tw_mse_1,s=420, edgecolor='black', marker='o')
+                ax.tick_params(axis='both', which='major', labelsize=48)
+                ax.set_ylabel('Average Fatigue Life RMSE', fontsize=48)
+                ax.set_xlabel(lhs_data.columns[i], fontsize=48)
+                if self.save:
+                    filename = f"{self.directory}/graphs/tuning {lhs_data.columns[i]}.png"
+                    plt.savefig(filename)
+                plt.show()
+        
+        tw_choice = min(range(len(tw_mse_1)), key=tw_mse_1.__getitem__)
+        
+        #this needs to match everywhere
+        vm_yield_stress = np.arange(20e6, 30e6, (30e6 - 20e6) / vm_exp)
+        vm_yield_strain = np.arange(1e-4, 2e-3, (2e-3 - 1e-4) / vm_exp)
+        
+        if self.plot:
+            X = vm_yield_stress
+            y = vm_o_mse_1
+            fig,ax = plt.subplots(figsize=(22,16))
+            plt.title('Threshold calibration')
+            ax.scatter(X,y,s=420,edgecolor='black',marker='o')
+            ax.tick_params(axis='both',which='major',labelsize=48)
+            ax.set_ylabel('Average RMSE',fontsize=48)
+            ax.set_xlabel('von Mises stress threshold',fontsize=48)
+            if self.save:
+                filename = f"{self.directory}/graphs/tuning von Mises stress.png"
+                plt.savefig(filename)
+            plt.show()
+            
+            X = vm_yield_strain
+            y = vm_e_mse_1
+            fig,ax = plt.subplots(figsize=(22,16))
+            plt.title('Threshold calibration')
+            ax.scatter(X,y,s=420,edgecolor='black',marker='o')
+            ax.tick_params(axis='both',which='major',labelsize=48)
+            ax.set_ylabel('Average RMSE',fontsize=48)
+            ax.set_xlabel('von Mises strain threshold',fontsize=48)
+            if self.save:
+                filename = f"{self.directory}/graphs/tuning von Mises strain.png"
+                plt.savefig(filename)
+            plt.show()
+        
+        vm_o_choice = min(range(len(vm_o_mse_1)), key=vm_o_mse_1.__getitem__)
+        vm_e_choice = min(range(len(vm_e_mse_1)), key=vm_e_mse_1.__getitem__)
+        if self.save:
+            # this removes all data except for minimum
+            file = self.directory + 'LHS.csv'
+            df = lhs_data.iloc[[tw_choice]].copy()
+            df['vm_o'] = vm_yield_stress[vm_o_choice]
+            df['vm_e'] = vm_yield_strain[vm_e_choice]
+            df.to_csv(file, index=False)
+            
+            self.data['Tsai-Wu Strained Volume'] = self.data['Tsai-Wu Strained Volume'].apply(
+                lambda s: float(s.split(',')[tw_choice]))
+            
+            self.data['von Mises Stressed Volume'] = self.data['von Mises Stressed Volume'].apply(
+                lambda s: float(s.split(',')[vm_o_choice]))
+            
+            self.data['von Mises Strained Volume'] = self.data['von Mises Strained Volume'].apply(
+                lambda s: float(s.split(',')[vm_e_choice]))
+            
+            main_file = os.path.join(self.directory, 'Cadaver_Loadcases.xlsx')
+            self.data.to_excel(main_file, index=False, engine='openpyxl')
+            
+    def define_sn_curves(self, mtnos=(2, 3, 4), cycles=['Fatigue Life', 'Initial Stiffness','Maximum Stiffness','Max Hardening Ratio'],
+                     mags=['von Mises Stressed Volume', 'von Mises Strained Volume', 'Tsai-Wu Strained Volume',
+                           'Max Principal Strain', 'Min Principal Strain', 'Predicted Stiffness']):
     
-    def define_sn_curves(self, mtnos=(2, 3, 4), cycles=['Fatigue Life',
-                                                        'cyc1','cyc10','cyc100','cyc1000','cyc10000'],
-                         mags=['von Mises Stressed Volume', 'Tsai Wu Strained Volume',
-                               'Max Tsai Wu Ratio','Max von Mises Ratio',
-                               'Max Principal Strain','Min Principal Strain','Predicted Stiffness']):
         if isinstance(mtnos, int):
             mtnos = (mtnos,)
         self.load_the_cases(mtnos)
-        
-        color_map = {'Tsai Wu Strained Volume': 'fuchsia', 'von Mises Stressed Volume': 'blue', 
-                     'Max Tsai Wu Ratio': 'fuchsia', 'Max von Mises Ratio': 'blue',
-                     'Max Principal Strain':'red','Min Principal Strain':'blue','Predicted Stiffness':'black'}  
-        res=[]
-        for angle in [0,30]:
+    
+        # Plot colors
+        color_map = {'Tsai-Wu Strained Volume': 'fuchsia', 'von Mises Stressed Volume': 'blue',
+                     'von Mises Stressed Volume': 'green',
+                     'Max Principal Strain': 'red', 'Min Principal Strain': 'blue', 'Predicted Stiffness': 'black'}
+    
+        res = []
+    
+        for angle in [0, 30]:
             data_group = self.data[self.data['Angle'] == angle]
+        
             for cyc in cycles:
-                
-                plotted_mags = [] 
-                co = 0
-                for ind, mag in enumerate(mags):
-                    df = data_group.dropna(subset=[cyc, mag, 'Foot', 'Side', 'Mtno'])
-                    df.loc[df[cyc] == 0, cyc] = np.nan
-                    df = df.dropna(subset=[cyc, mag])
-            
-                    if df.empty or len(df) < 3:
+                for mag in mags:
+                    required_cols = [cyc, mag, 'Foot', 'Side', 'Mtno']
+                    df = data_group.dropna(subset=required_cols).copy()
+        
+                    df[cyc] = df[cyc].replace(0, np.nan)
+                    df.dropna(subset=[cyc, mag], inplace=True)
+        
+                    # Skip if insufficient data
+                    if len(df) < 3:
                         continue
-            
+        
+                    mask = df[cyc] > 0
+                    X = df.loc[mask, cyc]
+                    y = df.loc[mask, mag]
+        
+                    log_model = False  # Flag to indicate if log transformation is used
+        
                     if cyc == 'Fatigue Life':
                         mask = (df[cyc] < 250000) & (df[cyc] > 0)
+                        survivors = df[cyc] >= 250000
+        
+                        # Log transformation (avoid log(0))
                         X = np.log10(df.loc[mask, cyc])
-                        y = np.log10(abs(df.loc[mask, mag]))
-                    else:
-                        mask = df[cyc] > 0
-                        X = df.loc[mask, cyc]
-                        y = df.loc[mask, mag]
-            
-                    model = sm.OLS(y, sm.add_constant(X)).fit()
-                    y_pred = model.predict(sm.add_constant(X))
-            
-                    rmse = np.sqrt(mean_squared_error(y, y_pred))
-                    mae = mean_absolute_error(y, y_pred)
-            
+                        y = np.abs(df.loc[mask, mag])
+                        y_log = np.log10(y+1)
+        
+                        # Survival data (handle empty cases safely)
+                        if survivors.any():
+                            X_surv = np.log10(df.loc[survivors, cyc])
+                            y_surv = np.abs(df.loc[survivors, mag])
+                        else:
+                            X_surv, y_surv = np.array([]), np.array([])
+        
+                    # Add constant for regression
+                    X = sm.add_constant(X)
+                    model = sm.OLS(y, X).fit()
+                    #model_log = sm.OLS(y_log, X).fit() if cyc == 'Fatigue Life' else None
+        
+                    # Calculate error metrics
+                    y_pred = model.predict(X)
+                    rmse, mae = np.sqrt(mean_squared_error(y, y_pred)), mean_absolute_error(y, y_pred)
+        
+                    # if model_log:
+                        # At one point I wanted to check to see if logging both axes would
+                        # change the curve fits
+                    #     y_pred_log = model_log.predict(X)
+                    #     rmse_log, mae_log = np.sqrt(mean_squared_error(10**y_log, 10**y_pred_log)), mean_absolute_error(10**y_log, 10**y_pred_log)
+        
+                    #     if mae_log < mae:
+                    #         model, log_model = model_log, True
+                    #         y_surv = np.log10(y_surv+1)
+                    #         y, y_pred, rmse, mae = y_log, y_pred_log, rmse_log, mae_log
+        
+                    # Extract Model Parameters
+                    slope, intercept = model.params.iloc[1], model.params.iloc[0]
+                    p_val, r_squared = model.pvalues.iloc[1], getattr(model, "rsquared", None)
+        
+                    # Survival Prediction Rate
+                    surv_pred_rate = 0
+                    if len(X_surv) > 0:
+                        if cyc == 'Fatigue Life':
+                            X = np.log10(df.loc[mask, cyc])
+                        else:
+                            X = df.loc[mask, cyc]
+                        y_c = sm.add_constant(y)
+                        y_surv = sm.add_constant(y_surv)
+                        model = sm.OLS(X, y_c).fit()
+                        pred_surv = model.predict(y_surv)
+                        surv_pred_rate = np.mean(10**pred_surv > 250000)
+        
+                    # Append results
                     res.append({
                         'Angle': angle,
                         'Cycle': cyc,
                         'Magnitude': mag,
-                        'Slope': model.params.iloc[1],
-                        'Intercept': model.params.iloc[0],
-                        'R-Squared': model.rsquared,
-                        'P-Value': model.pvalues.iloc[1],
+                        'Slope_X': slope,
+                        'Intercept': intercept,
+                        'R-Squared': r_squared,
+                        'P-Value_X': p_val,
                         'RMSE': rmse,
-                        'MAE': mae
+                        'MAE': mae,
+                        'Survival Prediction Rate': surv_pred_rate
                     })
+    
+                        # Plot if conditions met
+                    if self.plot and model.pvalues.iloc[1] < 0.25:
+                        # Determine the ylabel based on the 'mag' variable
+                        if 'volume' in mag.lower():
+                            ylabel = 'Failed Volume (mm\u00B3)'
+                        elif 'stiff' in mag.lower():
+                            ylabel = 'Stiffness (N/mm)'
+                        else:
+                            ylabel = 'Strain (mm/mm)'
                     
-                    if self.plot and model.pvalues.iloc[1] < 0.1:
-                        plt.figure(figsize=(20, 16))
-                        c = color_map.get(mag, 'blue')  # Assign color based on magnitude
+                        if isinstance(X, pd.DataFrame):
+                            X = X.to_numpy()
+                        if isinstance(y, pd.Series):
+                            y = y.to_numpy()
                     
-                        if cyc == 'Fatigue Life':
+                        fig = plt.figure(figsize=(30, 24))
+                        c = color_map.get(mag, 'blue')
+                    
+                        if (cyc == 'Fatigue Life'):
                             X_plot = 10**X
-                            y_plot = 10**y
-                            y_pred_plot = 10**y_pred
-                            model_label = f'log(y) = {model.params.iloc[1]:.2f}*log(x) + {model.params.iloc[0]:.2f}\n' \
-                                          f'$r^2$ = {model.rsquared:.2f}, $p$ = {model.pvalues.iloc[1]:.3g}'
+                            if log_model:
+                                y_plot = 10**y
+                                y_pred_plot = 10**y_pred
+                            else:
+                                y_plot = y
+                                y_pred_plot = y_pred
                         else:
                             X_plot = X
                             y_plot = y
                             y_pred_plot = y_pred
-                            model_label = f'y = {model.params.iloc[1]:.2f}*x + {model.params.iloc[0]:.2f}\n' \
-                                          f'$r^2$ = {model.rsquared:.2f}, $p$ = {model.pvalues.iloc[1]:.3g}'
                     
-                        plt.scatter(X_plot, y_plot, color=c, s=420, edgecolor='black', marker='o')
-                        plt.plot(X_plot, y_pred_plot, color=c, linestyle='dashed',
-                                 label=model_label)
-                        
-                        for i in range(len(X_plot)):
-                            label = f"{df.iloc[i]['Foot']}-{df.iloc[i]['Side']}-{df.iloc[i]['Mtno']}"
-                            plt.text(X_plot.iloc[i], y_plot.iloc[i], label, fontsize=28, ha='left', va='bottom',
-                                     bbox=dict(facecolor='white', alpha=0.5, edgecolor='none', boxstyle='round,pad=0.3'))
+
+                        # 2D scatter and plot
+                        fig, ax = plt.subplots(figsize=(22, 16))
+                        if cyc == 'Fatigue Life':
+                            ax.set_xscale('log')
+                            if log_model:
+                                ax.set_yscale('log')
+                            xlabel = cyc
+                        elif 'initial' in cyc.lower():
+                            xlabel = 'Initial Stiffness (N/mm)'
+                        elif 'maximum stiffness' in cyc.lower():
+                            xlabel = 'Maximum Stiffness (N/mm)'
+                        elif 'max hardening' in cyc.lower():
+                            xlabel = 'Maximum Hardening Ratio ([N/mm]/[N/mm])'
                             
-                        plotted_mags.append(mag)
-                        if 'volume' in mag.lower():
-                            plt.ylabel('Failed Volume (mm\u00B3)', fontsize=48)
-                        elif 'stiff' in mag.lower():
-                            plt.ylabel('Stiffness (N/mm)', fontsize=48)
-                        elif 'ratio' in mag.lower():
-                            plt.ylabel('Max Damaged Volume Ratio', fontsize=48)
-                        else:
-                            plt.ylabel('Strain (mm/mm)', fontsize=48)
-                        plt.xlabel(cyc, fontsize=48)
-                        plt.xscale('log' if cyc == 'Fatigue Life' else 'linear')
-                        plt.yscale('log' if cyc == 'Fatigue Life' else 'linear')
-                        plt.title(f'{mag}: {angle} degrees', fontsize=64)
-                        plt.grid(True, which="both", ls="--", lw=0.25)
-                        
-                        plt.tick_params(axis='both', which='major', labelsize=48)
-                        plt.tick_params(axis='both', which='minor', labelsize=48)
-                        plt.legend(fontsize=16)
-                
+                        scatter = ax.scatter(X_plot, y_plot, s=420, edgecolor='black', marker='o')
+                        ax.plot(X_plot, y_pred_plot, color=c, linestyle='dashed', alpha=0.5)
+
+                        # Axis Labels and Titles with increased separation
+                        # add text here that shows equation, p val, and r2
+                        ax.set_xlabel(xlabel, fontsize=48, labelpad=20)
+                        ax.set_ylabel(ylabel, fontsize=48, labelpad=20)
+                        ax.set_title(f'{mag}: {angle} degrees', fontsize=64, pad=30)
+                        ax.grid(True, which="both", ls="--", lw=0.25)
+                        eq_text = f"y = {slope:.2f}x + {intercept:.2f}\nP-value: {p_val:.3g}\nR²: {model.rsquared:.3f}"
+                        ax.text(1.05, 0.1, eq_text, transform=ax.transAxes, fontsize=36)
+
+                        ax.tick_params(axis='both', which='major', labelsize=48)
+                        ax.tick_params(axis='both', which='minor', labelsize=48)
+                        # Save the plot
                         if self.save:
                             graph_dir = os.path.join(self.directory, 'graphs')
                             os.makedirs(graph_dir, exist_ok=True)
-                            plt.savefig(os.path.join(graph_dir, f'Angle_{angle}_{cyc}_{mag}.png'), bbox_inches='tight', dpi=300)
-                
+                            plt.savefig(os.path.join(graph_dir, f'Angle_{angle}_{cyc}_{mag}_2d.png'), bbox_inches='tight', dpi=300)
+                        plt.tight_layout(pad=5)
                         plt.show()
                         plt.close()
         
+        # Convert Results to DataFrame
         res_df = pd.DataFrame(res)
-        
+    
+        # Save to Excel if required
         if self.save:
             file_path = os.path.join(self.directory, 'sn_curve_results.xlsx')
             res_df.to_excel(file_path, index=False)
-        
-        return res_df
     
+        return res_df
+            
     def corr_plots(self, mags=None):
+        def significance_marker(p):
+            if p < 0.001: return '***'
+            elif p < 0.01: return '**'
+            elif p < 0.05: return '*'
+            else: return ''
+    
         if mags is None:
-            mags = ['von Mises Stressed Volume', 'Tsai Wu Strained Volume',
-                    'Max Principal Strain', 'Min Principal Strain', 
-                    'Max Tsai Wu Ratio','Max von Mises Ratio',
-                    'Predicted Stiffness']
+            mags = ['von Mises Stressed Volume', 'von Mises Strained Volume', 'Tsai-Wu Strained Volume']
         if self.data is None:
             print("Data not loaded. Run load_the_cases() or define_loadcases() first.")
             return
-        df = self.data[mags].dropna()
-        corr = df.corr()
-    
+        df_ax = self.data[(self.data['Angle']==0) & (self.data['Fatigue Life'] > 0)][mags].dropna()
+        df_bd = self.data[(self.data['Angle']==30) & (self.data['Fatigue Life'] > 0)][mags].dropna()
+        
+        cols_ax = df_ax.columns
+        cols_bd = df_bd.columns
+        n_ax = len(cols_ax)
+        n_bd = len(cols_bd)
+        
+        pvals_ax = pd.DataFrame(np.ones((n_ax, n_ax)), columns=cols_ax, index=cols_ax)
+        pvals_bd = pd.DataFrame(np.ones((n_bd, n_bd)), columns=cols_bd, index=cols_bd)
+        
+        corr_ax = df_ax.corr()
+        corr_bd = df_bd.corr()
+        
+        for i in range(n_ax):
+            for j in range(n_ax):
+                if i != j:
+                    r_k, p_k = kendalltau(df_ax[cols_ax[i]], df_ax[cols_ax[j]])
+                    corr_ax.iloc[i, j] = r_k
+                    pvals_ax.iloc[i, j] = p_k
+                else:
+                    pvals_ax.iloc[i, j] = 1
+        for i in range(n_bd):
+            for j in range(n_bd):
+                if i != j:
+                    r_k, p_k = kendalltau(df_bd[cols_bd[i]], df_bd[cols_bd[j]])
+                    corr_bd.iloc[i, j] = r_k
+                    pvals_bd.iloc[i, j] = p_k
+                else:
+                    pvals_bd.iloc[i, j] = 1
+        
+        annot_ax = corr_ax.copy()
+        for i in range(n_ax):
+            for j in range(n_ax):
+                r = corr_ax.iloc[i, j]**2
+                sig = significance_marker(pvals_ax.iloc[i, j])
+                annot_ax.iloc[i, j] = f'{r:.2f}{sig}'
+                
+        annot_bd = corr_bd.copy()
+        for i in range(n_bd):
+            for j in range(n_bd):
+                r = corr_bd.iloc[i, j]**2
+                sig = significance_marker(pvals_bd.iloc[i, j])
+                annot_bd.iloc[i, j] = f'{r:.2f}{sig}'
+        
         plt.figure(figsize=(16, 16))
-        ax = sns.heatmap(corr, annot=True, fmt='.2f', cmap='viridis', annot_kws={'fontsize': 36}, cbar=True)
+        #get r2
+        ax = sns.heatmap(corr_ax, annot=annot_ax.values, fmt='', cmap='viridis',
+                 annot_kws={'fontsize': 36}, cbar=True)
         cbar = ax.collections[0].colorbar
         cbar.ax.tick_params(labelsize=28)
         
         ax.tick_params(axis='x', which='major', labelsize=28, rotation=25)
         ax.tick_params(axis='y', which='major', labelsize=28, rotation=0)
-        plt.title('Correlation Heatmap', fontsize=36)
+        plt.title('Axial Correlation Heatmap', fontsize=36)
         ax.set_xticklabels(ax.get_xticklabels(), ha='right', position=(0.05, 0))
         
         if self.save:
-            file_path = os.path.join(self.directory, 'correlations.png')
+            file_path = os.path.join(self.directory, 'graphs/axial_correlations.png')
+            plt.savefig(file_path, bbox_inches='tight', dpi=300)
+        plt.show()
+        
+        plt.figure(figsize=(16, 16))
+        bd = sns.heatmap(corr_bd, annot=annot_bd.values, fmt='', cmap='viridis',
+                 annot_kws={'fontsize': 36}, cbar=True)
+        cbar = bd.collections[0].colorbar
+        cbar.ax.tick_params(labelsize=28)
+        
+        bd.tick_params(axis='x', which='major', labelsize=28, rotation=25)
+        bd.tick_params(axis='y', which='major', labelsize=28, rotation=0)
+        plt.title('Bending Correlation Heatmap', fontsize=36)
+        bd.set_xticklabels(bd.get_xticklabels(), ha='right', position=(0.05, 0))
+        
+        if self.save:
+            file_path = os.path.join(self.directory, 'graphs/bending_correlations.png')
             plt.savefig(file_path, bbox_inches='tight', dpi=300)
         plt.show()
         
         # Pairplot
-        g = sns.pairplot(df)
+        g = sns.pairplot(df_ax)
         for ax in g.axes.flatten():
             if ax is not None:
-                ax.tick_params(axis='x', which='major', labelsize=20)
-                ax.tick_params(axis='y', which='major', labelsize=20)
+                ax.tick_params(axis='x', which='major', labelsize=16)
+                ax.tick_params(axis='y', which='major', labelsize=16)
     
-        g.fig.suptitle('Pairwise Correlation Plot', fontsize=36, y=1.02)
+        g.fig.suptitle('Axial Pairwise Correlation Plot', fontsize=36, y=1.1)
         for ax in g.axes.flatten():
-            ax.set_xlabel(ax.get_xlabel(), fontsize=26, rotation=25, ha='right')
-            ax.set_ylabel(ax.get_ylabel(), fontsize=26, rotation=25, labelpad=140)
+            ax.set_xlabel(ax.get_xlabel().replace('ed Volume', ''), fontsize=18)
+            ax.set_ylabel(ax.get_ylabel().replace('ed Volume', ''), fontsize=18)
         if self.save:
-            file_path = os.path.join(self.directory, 'scatter_correlations.png')
+            file_path = os.path.join(self.directory, 'graphs/scatter_bending_corr.png')
             g.fig.savefig(file_path, bbox_inches='tight', dpi=300)
         plt.show()
+        
+        g = sns.pairplot(df_bd)
+        for ax in g.axes.flatten():
+            if ax is not None:
+                ax.tick_params(axis='x', which='major', labelsize=16)
+                ax.tick_params(axis='y', which='major', labelsize=16)
+    
+        g.fig.suptitle('Bending Pairwise Correlation Plot', fontsize=36, y=1.1)
+        for ax in g.axes.flatten():
+            ax.set_xlabel(ax.get_xlabel().replace('ed Volume', ''), fontsize=18)
+            ax.set_ylabel(ax.get_ylabel().replace('ed Volume', ''), fontsize=18)
+        if self.save:
+            file_path = os.path.join(self.directory, 'scatter_axial_corr.png')
+            g.fig.savefig(file_path, bbox_inches='tight', dpi=300)
+        plt.show()
+        
+    def multi_model(self):
+        
+        ax_cond = (((self.data['Angle']==0) & 
+                    (self.data['Fatigue Life'] > 0) & 
+                    (self.data['Fatigue Life'] < 250000)))
+                   
+        bd_cond = (((self.data['Angle']==30) & 
+                    (self.data['Fatigue Life'] > 0) & 
+                    (self.data['Fatigue Life'] < 250000)))
+        
+        y_ax = self.data[ax_cond]['Fatigue Life']
+        y_bd = self.data[bd_cond]['Fatigue Life']
+        
+        Xax_1 = self.data[ax_cond]['Age']
+        Xbd_1 = self.data[bd_cond]['Age']
+        
+        Xax_2 = self.data[ax_cond]['Sex']
+        Xbd_2 = self.data[bd_cond]['Sex']
+        
+        cols = ['von Mises Stressed Volume', 'von Mises Strained Volume', 'Tsai-Wu Strained Volume',
+                                'Max Principal Strain', 'Min Principal Strain', 'Predicted Stiffness']
+        ind_ = ['Age coef','Age p-value','Sex coef','Sex p-value','X coef','X p-value','Overall p-value','Mean Absolute Error']
+        Xax_3s = self.data[ax_cond][cols]
+        Xbd_3s = self.data[bd_cond][cols]
+        
+        metrics_ax = pd.DataFrame(np.zeros((len(ind_), len(cols))), columns=cols)
+        metrics_bd = pd.DataFrame(np.zeros((len(ind_), len(cols))), columns=cols)
+        
+        metrics_ax.index = ind_
+        metrics_bd.index = ind_
+    
+        y_ax = y_ax.reset_index(drop=True)
+        y_bd = y_bd.reset_index(drop=True)
+        
+        thresh = 0.05  # Significance threshold
+        
+        for i in range(Xax_3s.shape[1]):    
+            # Stack predictor variables
+            X_ax = np.column_stack((Xax_1, Xax_2, Xax_3s.iloc[:, i]))
+            X_bd = np.column_stack((Xbd_1, Xbd_2, Xbd_3s.iloc[:, i]))
+            
+            # Convert to DataFrame with meaningful column names
+            X_ax = sm.add_constant(pd.DataFrame(X_ax, columns=['Age', 'Sex', Xax_3s.columns[i]]))
+            X_bd = sm.add_constant(pd.DataFrame(X_bd, columns=['Age', 'Sex', Xbd_3s.columns[i]]))
+        
+            # Reset indices to prevent misalignment
+            X_ax = X_ax.reset_index(drop=True)
+            X_bd = X_bd.reset_index(drop=True)
+        
+            # Backward Elimination for X_ax
+            while X_ax.shape[1] > 1:
+                model_ax = sm.OLS(np.log10(y_ax), X_ax).fit()
+                pvals_ax = model_ax.pvalues
+                
+                max_p = pvals_ax[1:].max()
+                if max_p < thresh:
+                    break  # Stop if all predictors are significant
+                
+                worst_feature = pvals_ax[1:].idxmax()
+                X_ax = X_ax.drop(columns=[worst_feature])  # Drop worst predictor
+        
+            # Backward Elimination for X_bd
+            while X_bd.shape[1] > 1:
+                model_bd = sm.OLS(np.log10(y_bd), X_bd).fit()
+                pvals_bd = model_bd.pvalues
+                
+                max_p = pvals_bd[1:].max()
+                if max_p < thresh:
+                    break  
+                
+                worst_feature = pvals_bd[1:].idxmax()
+                X_bd = X_bd.drop(columns=[worst_feature])
+        
+            
+            model_ax = sm.OLS(np.log10(y_ax), X_ax).fit()
+            model_bd = sm.OLS(np.log10(y_bd), X_bd).fit()
+        
+            # Predictions
+            y_pred_ax = 10**model_ax.predict(X_ax)
+            y_pred_bd = 10**model_bd.predict(X_bd)
+        
+            # Get remaining predictor names
+            remaining_ax = list(model_ax.pvalues.index[1:])  # Exclude intercept
+            remaining_bd = list(model_bd.pvalues.index[1:])
+        
+            for var in remaining_ax:  
+                if 'age' in var.lower():
+                    idx_c = 'Age coef'
+                    idx_p = 'Age p-value'
+                    
+                elif 'sex' in var.lower():
+                    idx_c = 'Sex coef'
+                    idx_p = 'Sex p-value'
+                else:
+                    idx_c = 'X coef'
+                    idx_p = 'X p-value'
+                metrics_ax.loc[idx_p, cols[i]] = model_ax.pvalues[var]
+                metrics_ax.loc[idx_c, cols[i]] = model_ax.params[var]
+        
+            for var in remaining_bd:
+                if 'age' in var.lower():
+                    idx_c = 'Age coef'
+                    idx_p = 'Age p-value'
+                    
+                elif 'sex' in var.lower():
+                    idx_c = 'Sex coef'
+                    idx_p = 'Sex p-value'
+                else:
+                    idx_c = 'X coef'
+                    idx_p = 'X p-value'
+                metrics_bd.loc[idx_p, cols[i]] = model_bd.pvalues[var]
+                metrics_bd.loc[idx_c, cols[i]] = model_bd.params[var]
+        
+            # Assign F-statistic p-value
+            metrics_ax.loc[ind_[6], cols[i]] = model_ax.f_pvalue
+            metrics_bd.loc[ind_[6], cols[i]] = model_bd.f_pvalue
+        
+            # Assign mean absolute error
+            metrics_ax.loc[ind_[7], cols[i]] = mean_absolute_error(y_ax, y_pred_ax)
+            metrics_bd.loc[ind_[7], cols[i]] = mean_absolute_error(y_bd, y_pred_bd)
+            
+            if self.plot:
+                min_val = min(min(y_pred_ax), min(y_ax))
+                max_val = max(max(y_pred_ax), max(y_ax))
+                
+                plt.figure(figsize=(16, 16))
+                plt.scatter(y_pred_ax, y_ax,s=420)
+                plt.plot([min_val, max_val], [min_val, max_val], 'r--', linewidth=3)
+                
+                ax = plt.gca()  # Get current axes
+                ax.tick_params(axis='both', which='major', labelsize=48)
+                ax.set_ylabel('Actual Fatigue Life', fontsize=48)
+                ax.set_xlabel('Predicted Fatigue Life', fontsize=48)
+                ax.set_xscale('log')
+                ax.set_yscale('log')
+                plt.title('Axial Fatigue Life vs. f(' + ', '.join(remaining_ax) + ')', fontsize=48)
+                
+                x_lim = ax.get_xlim()
+                y_lim = ax.get_ylim()
+                
+                #plt.text(x_lim[1] * 0.5, y_lim[0] * 1.1, f'p = {model_ax.f_pvalue:.6f}', fontsize=32, color='red')
+                plt.show()
+                
+                min_val = min(min(y_pred_bd), min(y_bd))
+                max_val = max(max(y_pred_bd), max(y_bd))
+                plt.figure(figsize=(16, 16))
+                plt.scatter(y_pred_bd, y_bd,s=420)
+                plt.plot([min_val, max_val], [min_val, max_val], 'r--', linewidth=3)
+                
+                ax = plt.gca()  # Get current axes
+                ax.tick_params(axis='both', which='major', labelsize=48)
+                ax.set_ylabel('Actual Fatigue Life', fontsize=48)
+                ax.set_xlabel('Predicted Fatigue Life', fontsize=48)
+                ax.set_xscale('log')
+                ax.set_yscale('log')
+                plt.title('Bending Fatigue Life vs. f(' + ', '.join(remaining_bd) + ')', fontsize=48)
+                
+                #plt.text(x_lim[1] * 0.5, y_lim[0] * 1.1, f'p = {model_bd.f_pvalue:.6f}', fontsize=32, color='red')
+                plt.show()
+                
+        if self.save:
+            file = self.directory + 'multivariate_fatigue_life.csv'
+            metrics_combined = pd.concat([metrics_ax, metrics_bd], keys=['Axial', 'Bending'])
+            metrics_combined.to_csv(file, index=True)
+            
+        return metrics_ax, metrics_bd
         
 #%%
 if __name__ == "__main__":
@@ -336,14 +802,20 @@ if __name__ == "__main__":
     parser.add_argument('--stats', action='store_true', default=False, help='perform stats')
     parser.add_argument('--mtnos', type=int, default=(2,3,4), help='MT numbers to analyze')
     args = parser.parse_args([
-        '-s',
+        #'-s',
         '-p',
-        #'--redef',
-        '--repro',
+        #'--redef', #takes a medium time, resets to Cadaver_Tracking.xlsx
+        '--repro', # takes a long time, recreates parquets in Fatigue study
         '--stats'
         ])
 
     directory = 'Z:/_Current IRB Approved Studies/Karens_Metatarsal_Stress_Fractures/Cadaver_Data/'
+    csv_file = directory + 'LHS.csv'
+    lhs_data = pd.read_csv(csv_file)
+    if len(lhs_data) > 1:
+        re_search = True
+    else:
+        re_search = False
     
     if args.subs:
         items = args.subs.split(',')
@@ -351,6 +823,8 @@ if __name__ == "__main__":
         items = [d for d in os.listdir(directory) if os.path.isdir(os.path.join(directory, d)) and ('220' in d or '2108482' in d)]
    
     mt_map = {'MT2': 2, 'MT3': 3, 'MT4': 4}
+    
+    main_file = os.path.join(directory, 'Cadaver_Loadcases.xlsx')
     
     load_case = pd.read_excel(f'{directory}/Cadaver_Tracking.xlsx', sheet_name='Load Case')
     load_case['Foot'] = load_case['Foot'].astype(str)
@@ -361,9 +835,7 @@ if __name__ == "__main__":
         doer.define_loadcases(load_case,args.mtnos)
     
     if args.repro:
-        main_file = os.path.join(directory, 'Cadaver_Loadcases.xlsx')
         df = pd.read_excel(main_file)
-        df.loc[:, df.columns.str.startswith("cyc")] = 0
         df.to_excel(main_file, index=False)
         processor = TestProcessor(
             directory=directory,
@@ -392,7 +864,21 @@ if __name__ == "__main__":
         print(f'mean minimum error: {mean_mme} mm')
     
     if args.stats:
+        if re_search:
+            df = pd.read_excel(main_file)
+            df = df[(df['Fatigue Life'] > 0) & (df['Fatigue Life'] < 250000)]
+            df = df[df['Angle'] == 30]
+            tw_exp = 64
+            vm_exp = 10
+            tw_str_vols = [np.array(t.split(',')) for t in df['Tsai-Wu Strained Volume']]
+            vm_str_o_vols = [np.array(v.split(',')) for v in df['von Mises Stressed Volume']]
+            vm_str_e_vols = [np.array(v.split(',')) for v in df['von Mises Strained Volume']]
+            fatigue_lives = df['Fatigue Life'].to_numpy()
+            
+            doer.tune_parameters(fatigue_lives,tw_str_vols,vm_str_o_vols,vm_str_e_vols,tw_exp,vm_exp,lhs_data)
         
         results = doer.define_sn_curves(args.mtnos)
+        if args.plot:
+            doer.corr_plots()
         
-        doer.corr_plots()
+        metrics_ax, metrics_bd = doer.multi_model()

@@ -18,6 +18,8 @@ class TestProcessor:
         self.current_mt = None
         self.mean_min_err = 0
         self.count = 0
+        self.max_stiff = 0.0
+        self.overwrite = True
     
     def process_all_tests(self, sub_directory, sub_name):
         for side in ['L', 'R']:
@@ -39,9 +41,11 @@ class TestProcessor:
             a = self.load_case
             condition = (a['Foot'] == sub_name) & (a['Side'] == side) & (a['Mtno'] == mtno)
             a = a.loc[condition]
-            if a['Fatigue Life'].isna().any():
+            try:
+                if a.iloc[0]['Fatigue Life'] == 0:
+                    continue
+            except:
                 continue
-            
             pred_disp = self.get_predicted_displacement(sub_name, side, mtno)
             
             try:
@@ -60,8 +64,13 @@ class TestProcessor:
 
             results = self.process_cycles(data, f'{sub_name}{side}{mtno}', pred_disp)
             if results is not None:
-                self.mean_min_err += self.handle_results(results, sub_name, side, mtno, item)
-                self.count += 1
+                hi = self.handle_results(results, sub_name, side, mtno, item)
+                
+                if hi is None:
+                    continue
+                else:
+                    self.mean_min_err += hi
+                    self.count += 1
     
     def identify_metatarsal(self, item):
         if 'MT2' in item:
@@ -77,18 +86,22 @@ class TestProcessor:
     def load_test_data(self, file_path):
         try:
             data = pd.read_csv(file_path)
-            columns = ["Time", 'Cycle Time', 'Cycle', 'eCycle', 'Step', 'Cycle Again', 'Position', 'Force', 'Pos']
+            columns = ['Time', 'Cycle Time', 'Cycle', 'eCycle', 'Step', 'Cycle Again', 'Position', 'Force', 'Pos']
             if data.shape[1] == 10:
                 columns.append('na')
             data.columns = columns
             return data
+        
         except Exception as e:
             print(f"Error loading data: {e}")
             return pd.DataFrame()
     
     def process_cycles(self, data, mtna, pred_disp):
         if self.current_mt != mtna:
+            self.current_mt = mtna
             self.reset_cycle_state()
+        else:
+            self.overwrite = False
 
         results = []
         max_cycle = data['Cycle'].max()
@@ -106,38 +119,64 @@ class TestProcessor:
 
     def analyze_cycle(self, cycle_data, pred_disp, cycle_num):
         cycle_data = cycle_data.reset_index(drop=True)
-        if len(cycle_data) <= 20:
+        a = len(cycle_data)
+        if a <= 20:
             return None
         
         max_load = cycle_data['Force'].min()
         min_load = cycle_data['Force'].max()
-        start_idx = cycle_data['Force'].idxmax()
+        
+        start_idx = cycle_data['Pos'].idxmax()
+        start_pos = cycle_data.loc[start_idx,'Pos']
+        
         inflection_idx = cycle_data['Pos'].idxmin()
         inflx_pos = cycle_data.loc[inflection_idx, 'Pos']
         
-        restricted_data = cycle_data[np.abs(cycle_data['Pos'] - inflx_pos) <= pred_disp]
-        restricted_data = restricted_data.loc[start_idx:]
+        dis_range = start_pos - inflx_pos
+        
+        start_restricted = start_pos - (dis_range/2)
+        end_restricted = inflx_pos + (dis_range/2)
+        
+        start_res_idx = cycle_data[cycle_data['Pos']<start_restricted].index[0]
+        end_res_idx = cycle_data[cycle_data['Pos']<end_restricted].index[-1]
+        
+        restricted_data = cycle_data.iloc[start_res_idx:end_res_idx]
+        
         full_range = cycle_data['Pos'].max() - cycle_data['Pos'].min()
         if full_range == 0:
             return None
         p_err = pred_disp - full_range
         
-        # Plot in debug only
-        # plt.figure(figsize=(20,20))
-        # plt.plot(cycle_data['Pos'], cycle_data['Force'] * -1000, color='fuchsia', linewidth=8, label='Full Data')
-        # plt.plot(restricted_data['Pos'], restricted_data['Force'] * -1000, color='blue', linewidth=8, label='Restricted Data')
+        # # Plot in debug only
+        # #
+        # # Uncomment this whole block and place debugs between (before and after).
+        # # Then run the plt.figure and then plt.legend lines, and remove the 
+        # # debug stop before this block. Now, continue for the amount of cycles 
+        # # you want to show and then run plt.show()
+        # # 
+        # # plt.figure(figsize=(20,20))
+        
+        # plt.plot(restricted_data['Pos'], restricted_data['Force'] * -1000, color='blue', linewidth=8, label='Eligible Data')
+        # plt.plot(cycle_data['Pos'], cycle_data['Force'] * -1000, color='fuchsia', linewidth=2, label='Full Data')
         
         # plt.xlabel('Position (mm)', fontsize=self.fontsize)
         # plt.ylabel('Force (N)', fontsize=self.fontsize)
         # plt.xticks(fontsize=self.fontsize)
         # plt.yticks(fontsize=self.fontsize)
-        # plt.legend(fontsize=self.fontsize)
+        
+        # # plt.legend(fontsize=self.fontsize, loc="lower left")
+        # # plt.show()
 
         slope_loading, slope_unloading, dissipation, load_work = self.calculate_stiffness(
             restricted_data, inflection_idx, max_load, min_load, inflx_pos, cycle_num)
         
         if slope_loading == 0 and slope_unloading == 0:
             return None
+        
+        if self.initialized:
+            h_rat = slope_loading/self.init_stiff
+        else:
+            h_rat = 0
         
         return {
             'Time': cycle_data['Cycle Time'].values[-1],
@@ -148,6 +187,7 @@ class TestProcessor:
             'PosMax': cycle_data['Pos'].max(),
             'Loading Stiffness': slope_loading,
             'Unloading Stiffness': slope_unloading,
+            'Hardening Ratio': h_rat,
             'Stiffness Loss': self.stiff_loss,
             'Energy Dissipation': dissipation,
             'Loading Work': load_work,
@@ -157,10 +197,11 @@ class TestProcessor:
     def calculate_stiffness(self, data, inflx_idx, max_load, min_load, inflx_pos, cycle_num):
         def is_valid_for_regression(subset):
             return subset['Pos'].nunique() > 1 and subset['Force'].nunique() > 1
-        if abs(min_load) > .06: #kN
-            return 0, 0, 0, 0 # cycle should start at low force 
+        
         # Loading Stiffness
-        load_data = data.loc[:inflx_idx]
+        inflx2 = data['Force'].idxmin()
+        
+        load_data = data.loc[:inflx2]
         if is_valid_for_regression(load_data):
             slope_load = linregress(load_data['Pos'], load_data['Force'] * 1000)[0]
         else:
@@ -173,96 +214,142 @@ class TestProcessor:
         else:
             return 0, 0, 0, 0  # Exit if invalid for regression
         
-        Y_L = load_data['Force']
-        X_L = load_data['Pos']
-        Y_U = unload_data['Force']
-        X_U = unload_data['Pos']
+        #I want to take the first section of load data if necessary
+        if len(load_data) > len(unload_data):
+            Y_L = load_data.iloc[:len(unload_data)]['Force']
+            X_L = load_data.iloc[:len(unload_data)]['Pos']
+            Y_U = unload_data['Force']
+            X_U = unload_data['Pos']
+        #I want to take the last section of unload if necessary
+        elif len(unload_data) > len(load_data):
+            Y_U = unload_data.iloc[len(load_data):]['Force']
+            X_U = unload_data.iloc[len(load_data):]['Pos']
+            Y_L = load_data['Force']
+            X_L = load_data['Pos']
+        else:
+            Y_L = load_data['Force']
+            X_L = load_data['Pos']
+            Y_U = unload_data['Force']
+            X_U = unload_data['Pos']
         
         # Calculate dissipation energies
         load_diss = abs(integrate.trapezoid(y=Y_L, x=X_L))
         unload_diss = abs(integrate.trapezoid(y=Y_U, x=X_U))
         dissipation = (load_diss - unload_diss) / load_diss
         
-        if not self.initialized:
-            self.window.append(slope_load)
-            self.init_stiff = slope_load
-            if len(self.window) > 2:
-                condition = (self.window[-2]>self.window[-1]*0.9 and
-                             self.window[-2]<self.window[-1])
-                if condition:
-                    self.initialized = True
-                    self.window = []
-                else:
-                    self.window.pop(0)
+        # some stiffnesses start out extrememly low, < 10, this must be the 
+        # very beginning of the test or an incorrect measurement.
+        if not self.initialized and slope_load > 30:
+            try:
+                self.init_stiff = slope_load
+                self.initialized = True
+            except:
+                return 0, 0, 0, 0
         else:
             self.stiff_loss = (slope_load / self.init_stiff) - 1
         
         # Clamp the returned values between 0 and 1000
         slope_load = np.clip(slope_load, 0, 1000)
-        slope_unload_ = np.clip(slope_unload, 0, 1000)
+        slope_unload = np.clip(slope_unload, 0, 1000)
         #Loading work is currently in kN*mm which works out to N*m
-        return slope_load, slope_unload_, dissipation, load_diss
+        return slope_load, slope_unload, dissipation, load_diss
 
     def reset_cycle_state(self):
-        self.window = []
+        self.overwrite = True
         self.init_point = 0
         self.stiff_loss = 0
-        self.init_stiff = 0
+        self.init_stiff = 0.0
         self.cycle_hist = 0
         self.initialized = False
+        self.max_stiff = 0.0
 
     def handle_results(self, results, sub_name, side, mtno, sheet_name):
-        min_err = min(abs(results['Predicted Displacement Error']))
+        save_parquet = True
+        try:
+            min_err = min(abs(results[results['Cycle']<200]['Predicted Displacement Error']))
+        except:
+            min_err = None
         # m_err = results['Predicted Displacement Error'].mean(skipna=True)
         # m_std = results['Predicted Displacement Error'].std(skipna=True)
         try:
             b, a = butter(4, 0.1, btype='low', analog=False)
-            results['Loading Stiffness']=filtfilt(b, a, results['Loading Stiffness'])
-            results['Unloading Stiffness']=filtfilt(b, a, results['Unloading Stiffness'])
-            results['Stiffness Loss']=filtfilt(b, a, results['Stiffness Loss'])
-            results['Energy Dissipation']=filtfilt(b, a, results['Energy Dissipation'])
-            results['Loading Work']=filtfilt(b, a, results['Loading Work'])
-            results['Predicted Displacement Error']=filtfilt(b, a, results['Predicted Displacement Error'])
+            for col in ['Loading Stiffness', 'Unloading Stiffness', 'Stiffness Loss',
+                        'Energy Dissipation', 'Loading Work', 'Predicted Displacement Error', 'Hardening Ratio']:
+                results[col] = filtfilt(b, a, results[col])
         except:
-            print(f'low output for {sub_name}{side}{mtno}')
+            save_parquet = False
+            print(f"Low output in a test from {sub_name}{side}{mtno}")
             
+        condition = ((self.load_case['Foot']==sub_name) & 
+                     (self.load_case['Side']==side) & 
+                     (self.load_case['Mtno']==mtno))
+            
+        fatigue_life = self.load_case[condition]['Fatigue Life'].values[0]
+        exp_cols = ['Cycle','Loading Stiffness','Unloading Stiffness','Energy Dissipation']
+        
+        if fatigue_life >= 250000:
+            fatigue_life = 500000 # 500k = LD50 as a guess for calculation
+            end_cycle = 50000 #100k cycles should be very low prob
+            save_data = results[results['Cycle']<end_cycle][exp_cols]
+        else:
+            save_data = results[results['Cycle']<fatigue_life][exp_cols]
+            if len(save_data) > 0:
+                if max(save_data['Loading Stiffness']) > self.max_stiff:
+                    self.max_stiff = max(save_data['Loading Stiffness'])
+        
+        if len(save_data) == 0:
+            print(f'{sub_name}_{side}_{mtno} has an empty test')
+            return None
+        
+        data_dir = 'Z:/_PROJECTS/Deep_Learning_HRpQCT/ICBIN_B/Data/Fatigue/Mech_Test/'
+        data_file = f'{data_dir}{sub_name}_{side}_{mtno}.parquet'
+        
+        k = 2
+        lambda_w = fatigue_life / (np.log(2) ** (1/k))
+        save_data['Failure Probability'] = 1 - np.exp(-((save_data['Cycle'] / lambda_w) ** k))
+        
         if self.save:
-            self.save_results(results, sub_name, side, mtno, sheet_name)
+            results = self.save_results(results, sub_name, side, mtno, sheet_name)
+            
+            if save_parquet:
+                if self.overwrite or not os.path.exists(data_file):
+                    save_data.to_parquet(data_file, engine='pyarrow', index=False)
+                else:
+                    # Append to the existing file
+                    existing_data = pd.read_parquet(data_file, engine='pyarrow')
+                    combined_data = pd.concat([existing_data, save_data], ignore_index=True)
+                    combined_data.to_parquet(data_file, engine='pyarrow', index=False)
+            
         if self.plot:
             self.plot_results(results, sheet_name, sub_name, side)
 
         self.cycle_hist = results['Cycle'].values[-1]
-        self.current_mt = f'{sub_name}{side}{mtno}'
-    
+            
         return min_err
     
     def save_results(self, results, subj, side, mt, sheet):
-        cycles = {}
-        end = 10000
-        
-        for t in [1, 10, 100, 1000, end]:
-            if t == 1:
-                s = results[results['Time']<2]['Loading Stiffness'].replace(0, np.nan).dropna()
-                s = s.iloc[0] if not s.empty else None
-            elif t < end:
-                subset = results[(results['Cycle'] > t) & (results['Cycle'] < 10 * t)]
-                s = subset['Loading Stiffness'].iloc[0] if not subset.empty else None
-            else:  # t == end
-                subset = results[results['Cycle'] > t]
-                s = subset['Loading Stiffness'].iloc[0] if not subset.empty else None
-        
-            if s and s != 0:
-                cycles[f'cyc{t}'] = s / self.init_stiff
         
         main_file = os.path.join(self.directory, 'Cadaver_Loadcases.xlsx')
         
         if os.path.exists(main_file):
             df = pd.read_excel(main_file)
-            row = (df['Foot'] == subj) & (df['Side'] == side)
-            for col, cycle in cycles.items():
-                df[col] = df[col].astype(float)
-                if pd.isna(df.loc[row, col].values[0]) or df.loc[row, col].values[0] == 0:
-                    df.loc[row, col] = cycle
+            df['Initial Stiffness'] = df['Initial Stiffness'].astype(float)
+            df['Maximum Stiffness'] = df['Maximum Stiffness'].astype(float)
+            df['Max Hardening Ratio'] = df['Max Hardening Ratio'].astype(float)
+            row = (df['Foot'] == subj) & (df['Side'] == side) & (df['Mtno'] == mt)
+            
+            if pd.isna(df.loc[row, 'Initial Stiffness'].values[0]) or df.loc[row, 'Initial Stiffness'].values[0] == 0:
+                df.loc[row,'Initial Stiffness'] = self.init_stiff
+                
+            if df.loc[row, 'Maximum Stiffness'].values[0] < self.max_stiff:
+                df.loc[row,'Maximum Stiffness'] = self.max_stiff
+            
+            if self.init_stiff > 0:
+                hrat = (self.max_stiff/self.init_stiff)
+            else:
+                hrat = 0
+            if df.loc[row, 'Max Hardening Ratio'].values[0] < hrat:
+                df.loc[row,'Max Hardening Ratio'] = hrat
             df.to_excel(main_file, index=False)
         else:
             print(f"Error: {main_file} not found.")
@@ -285,6 +372,8 @@ class TestProcessor:
                     results.to_excel(writer, sheet_name=sheet, index=False)
             except Exception as e:
                 print(f"Failed to save results: {e}")
+                
+        return results
                     
     def plot_results(self, results, sheet, subj, side):
         
@@ -298,8 +387,6 @@ class TestProcessor:
             case = 'Axial'
         else:
             case = 'Bending 30 deg'
-        
-        diff = results['Loading Stiffness'] - results['Unloading Stiffness']
         
         first_segment = results[results['Cycle'] < 10000]
         last_segment = results[results['Cycle'] > 10000]
@@ -327,9 +414,9 @@ class TestProcessor:
     
         # Second subplot (Cycle < 10000) - Energy Dissipation
         ax = axes[1, 0] if len(last_segment) > 1 else axes[1]
-        ax.plot(first_segment['Cycle'], first_segment['Predicted Displacement Error'], color='red', linewidth=8)
+        ax.plot(first_segment['Cycle'], first_segment['Energy Dissipation'], color='red', linewidth=8)
         ax.set_xlabel('Cycles', fontsize=self.fontsize)
-        ax.set_ylabel('FE Displacement Error', fontsize=self.fontsize)
+        ax.set_ylabel('Energy Dissipation', fontsize=self.fontsize)
         ax.set_title(f'{subj} {side} MT{mtno}; {force_app}N {case}', fontsize=self.fontsize)
         ax.tick_params(axis='both', labelsize=self.fontsize)
         ax.grid(**grid_params)
@@ -348,7 +435,7 @@ class TestProcessor:
     
             # Fourth subplot (Cycle > 10000) - Energy Dissipation (Log Scale)
             ax = axes[1, 1]
-            ax.plot(last_segment['Cycle'], last_segment['Predicted Displacement Error'], color='red', linewidth=8)
+            ax.plot(last_segment['Cycle'], last_segment['Energy Dissipation'], color='red', linewidth=8)
             ax.set_xscale('log')
             ax.set_xlabel('Cycles (log)', fontsize=self.fontsize)
             ax.set_title('(Cycle > 10000)', fontsize=self.fontsize)
