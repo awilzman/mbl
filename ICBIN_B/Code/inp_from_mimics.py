@@ -45,9 +45,18 @@ def scale_n_PCA(nodes,scale,layout=[0,1,2]):
         
     original_coordinates = np.array([x,y,z])
     
+    coordinates = np.array([original_coordinates[layout[0]],
+                            original_coordinates[layout[1]],
+                            original_coordinates[layout[2]]])
+    
     ipca = IncrementalPCA(n_components=3, batch_size=1000)
-    ipca.fit(original_coordinates.T)
-    reoriented_coordinates = ipca.transform(original_coordinates.T)
+    ipca.fit(coordinates.T)
+    reoriented_coordinates = ipca.transform(coordinates.T)
+    new_centroid = np.mean(reoriented_coordinates, axis=0)
+    
+    reoriented_coordinates[:,0] -= new_centroid[0]
+    reoriented_coordinates[:,1] -= new_centroid[1]
+    reoriented_coordinates[:,2] -= new_centroid[2]
     
     l = np.array(layout)
     x_s = np.where(l == 0)[0][0]
@@ -57,11 +66,6 @@ def scale_n_PCA(nodes,scale,layout=[0,1,2]):
     x = reoriented_coordinates[:,x_s]
     y = reoriented_coordinates[:,y_s]
     z = reoriented_coordinates[:,z_s]
-    
-    # force z in the middle, too many nodes on proximal side forces 
-    # PCA to place the center closer to the proximal side
-    z_half = (max(z) + min(z))/2
-    z -= z_half    
     
     nodes = np.column_stack((node_id,x,y,z))
     nodes = [f"\t{int(row[0])}, {row[1]:.9e}, {row[2]:.9e}, {row[3]:.9e}" for row in nodes]
@@ -100,14 +104,14 @@ if __name__ == "__main__":
     date = ('_'+month + '_' + day + '_' + year)
 
     parser = argparse.ArgumentParser(description='ABAQUS model generator')
-    parser.add_argument('--directory', type=str,default='Cadaver_Data')
-    parser.add_argument('--sub', type=str, default='2205048M',help='pt id')
-    parser.add_argument('--side', type=str, default='R',help='L/R side only for Cadaver_Data')
-    parser.add_argument('--angles', type=str, default='30', help='comma separated angles (degrees)')
-    parser.add_argument('--loads', type=str, default='180,226,287', help='comma separated loads (N)')
-    parser.add_argument('--flip', type=str, default='1,1,1', help='comma separated flip condiiton')
+    parser.add_argument('--directory', type=str,default='Subject Data')
+    parser.add_argument('--sub', type=str, default='MTSFX06',help='pt id')
+    parser.add_argument('--side', type=str, default='',help='L/R side only for Cadaver_Data')
+    parser.add_argument('--angles', type=str, default='30,50,55,60,65,70', help='comma separated angles (degrees)')
+    parser.add_argument('--loads', type=str, default='100', help='comma separated loads (N)')
+    parser.add_argument('--flip', type=str, default='0,0,0,0,0,0', help='comma separated flip condiiton')
     parser.add_argument('--scale', type=float, default=0.001,help='scaling to meters')
-    parser.add_argument('-t','--thresh_dist', type=float, default=0.025,
+    parser.add_argument('-t','--thresh_dist', type=float, default=0.02,
                         help='distance threshold for fixation load direction check.')
     parser.add_argument('--buffer', type=float, default=0.005, help='distance buffer for output nodes/elements (m)')
     args = parser.parse_args()
@@ -170,13 +174,6 @@ if __name__ == "__main__":
         element_sets = read_inp(base_file,'*ELSET','*MATERIAL',True)
         materials = read_inp(base_file,'*MATERIAL','*bleep',True)
         
-        hid_matlist = []
-        for i, mat in enumerate(materials):
-            if mat.startswith('*MATERIAL'):
-                ram = mat.split('=')[-1].replace(' ', '')  # Remove spaces
-                materials[i] = f'*MATERIAL, NAME={ram}'
-                hid_matlist.append(materials[i].split('=')[-1])
-        
         x = [float(node.split(',')[1]) for node in nodes]
         y = [float(node.split(',')[2]) for node in nodes]
         z = [float(node.split(',')[3]) for node in nodes]
@@ -206,8 +203,8 @@ if __name__ == "__main__":
         z = [float(node.split(',')[3]) for node in new_nodes]
         new_coords = np.column_stack((x, y, z))
         
-        min_z = min(new_coords[:,axis-1])
-        max_z = max(new_coords[:,axis-1])
+        min_z = min([float(node.split(',')[axis]) for node in new_nodes[2:]])
+        max_z = max([float(node.split(',')[axis]) for node in new_nodes[2:]])
         # this only works for resliced mimics files
         # assumes load direction is positive along long axis
         # how can we determine if it's the other way?
@@ -215,15 +212,19 @@ if __name__ == "__main__":
         load_node = 1 #assume load node is at the top of the scan... for now
         
         bend_dir = layout[1]+1
+        target = max_z - args.thresh_dist
         
         tan_30_deg = -1 / np.sqrt(3) 
         tolerance = 0.003
         
-        check_nodes = [(i+1) for i in range(len(z)) if (-args.thresh_dist > z[i] > -args.thresh_dist*1.1)]
+        check_nodes = [
+            node.split(',')[0] for node in new_nodes[2:] if float(
+                node.split(',')[axis]) < target and (
+                    float(node.split(',')[axis]) > -target)]
         
-        y_check = [nd[bend_dir-1] for i,nd in enumerate(new_coords) 
-                   if i+1 in check_nodes]
-                   
+        
+        y_check = [float(nd.split(',')[bend_dir]) for nd in new_nodes[2:] 
+                   if int(nd.split(',')[0] in check_nodes)]
         y_check = sum(y_check)
         
         bend_neg = y_check < 0
@@ -244,8 +245,7 @@ if __name__ == "__main__":
                 bend_value = float(node[bend_dir-1])
                 bend_z = float(node[axis-1])
                 bend_load_node = ind+1 #grab node farthest from the y axis
-        
-        target = max_z - args.thresh_dist
+                
         fixed_nodes = [node.split(',')[0] for node in new_nodes[2:] if float(node.split(',')[axis]) > target]
         
         active_nodes = [
@@ -286,17 +286,14 @@ if __name__ == "__main__":
         active_elements = '\n'.join(active_elements)
         
         element_sets2 = element_sets.copy()
-        
         element_sets.append('*ELSET, ELSET=Active_Elements')
         element_sets.append(active_elements)
-        count = 0
+        
         for i, line in enumerate(element_sets):
             if '*solid section,' in line.lower():
                 edit = line.split(',')
-                edit[-1] = f'MATERIAL={hid_matlist[count]}'
                 edit.insert(2, 'orientation=Ori-1')
                 element_sets[i] = ','.join(edit)
-                count += 1
         element_sets.append('*End Part')
         element_sets.append('*Assembly, name=Assembly')
         element_sets.append('*Instance, name=PART-1-1, part=PART-1')
@@ -304,31 +301,38 @@ if __name__ == "__main__":
         
         element_sets2.append('*ELSET, ELSET=Active_Elements')
         element_sets2.append(active_elements2)
-        count = 0
+        
         for i, line in enumerate(element_sets2):
             if '*solid section,' in line.lower():
                 edit = line.split(',')
-                edit[-1] = f'MATERIAL={hid_matlist[count]}'
                 edit.insert(2, 'orientation=Ori-1')
                 element_sets2[i] = ','.join(edit)
-                count += 1
         element_sets2.append('*End Part')
         element_sets2.append('*Assembly, name=Assembly')
         element_sets2.append('*Instance, name=PART-1-1, part=PART-1')
         element_sets2.append('*End Instance')
         
         node_sets = ['*NSET, NSET=Load_Node, instance=PART-1-1',f'{load_node}',
+                     '*NSET, NSET=Bend_Load_Node, instance=PART-1-1',f'{bend_load_node}',
                      '*NSET, NSET=Fixed_Nodes, instance=PART-1-1',fixed_nodes,
                      '*NSET, NSET=Active_Nodes, instance=Part-1-1',active_nodes]
-        node_sets2 = ['*NSET, NSET=Load_Node, instance=PART-1-1',f'{bend_load_node}',
+        node_sets2 = ['*NSET, NSET=Load_Node, instance=PART-1-1',f'{load_node}',
+                     '*NSET, NSET=Bend_Load_Node, instance=PART-1-1',f'{bend_load_node}',
                      '*NSET, NSET=Fixed_Nodes, instance=PART-1-1',fixed_nodes,
                      '*NSET, NSET=Active_Nodes, instance=Part-1-1',active_nodes2]
         
         constraint = [('*Coupling, constraint name=Constraint-1, ref node'+
                        '=Load_Node, surface=PART-1-1.SURFACE, influence radius=0.005'),
                       '*Kinematic','*End Assembly']
+        constraint2 = [('*Coupling, constraint name=Constraint-1, ref node'+
+                        '=Load_Node, surface=PART-1-1.SURFACE, influence radius=0.005'),
+                       '*Kinematic','*End Assembly']
 
-        for i, mat in enumerate(materials):                
+        for i, mat in enumerate(materials):
+            if mat.lower().startswith('*material'):
+                ram = mat.split('=')[-1].replace(' ', '')  # Remove spaces
+                materials[i] = f'*MATERIAL, NAME={ram}'
+                
             if mat.lower().startswith('*elastic'):
                 mat_list = list(mat)
                 mat_list.insert(11, ', type=ENGINEERING CONSTANTS')
@@ -364,7 +368,7 @@ if __name__ == "__main__":
         else:
             mtno = 4
         
-        steps = [f'*Step, NAME = MT{mtno}{side}{abs(int(load[0]))}_N_axial','*STATIC',
+        steps = [f'*Step, NAME = MT{mtno}{side}{abs(int(load[0]))}N_axial','*STATIC',
                  '*Cload',f'Load_Node, 3, {load[0]}','*Restart, write, frequency=0',
                  '*Output, field','*Node Output, nset=Active_Nodes','CF, RF, U',
                  '*Element Output, elset=PART-1-1.Active_Elements, directions=YES',
@@ -386,8 +390,6 @@ if __name__ == "__main__":
                     boundary + steps)
         write_inp(new_data, a_new_file)        
         
-        steps = []
-        
         for angle in angles:
             if angle == angles[0]:
                 for load_ in load:
@@ -396,20 +398,20 @@ if __name__ == "__main__":
                         load_ = -load_
                     y_force = np.sin(angle*np.pi/180) * load_
                     
-                    if abs(load_) == abs(load[0]):
-                        steps = [f'*Step, NAME = MT{mtno}{side}{abs(int(load_))}_N_{int(angle)}deg','*STATIC',
-                                 '*Cload',f'Load_Node, {bend_dir}, {y_force}',
-                                 f'Load_Node, 3, {z_force}',
+                    if load_ == load[0]:
+                        steps = [f'*Step, NAME = MT{mtno}{side}{abs(int(load_))}N_{int(angle)}deg','*STATIC',
+                                 '*Cload',f'Bend_Load_Node, {bend_dir}, {y_force}',
+                                 f'Bend_Load_Node, 3, {z_force}',
                                  '*Restart, write, frequency=0',
                                  '*Output, field','*Node Output, nset=Active_Nodes','CF, RF, U',
                                  '*Element Output, elset=PART-1-1.Active_Elements, directions=YES',
                                  'E, EVOL, MISES, MISESMAX, S',
                                  '*Output, history','*Contact Output','CSMAXSCRT, ','*End Step']
                     else:
-                        steps += [f'*Step, NAME = MT{mtno}{side}{abs(int(load_))}_N_{int(angle)}deg',
+                        steps += [f'*Step, NAME = MT{mtno}{side}{abs(int(load_))}N_{int(angle)}deg',
                                   '*STATIC',
-                                  '*Cload',f'Load_Node, {bend_dir}, {y_force}',
-                                  f'Load_Node, 3, {z_force}',
+                                  '*Cload',f'Bend_Load_Node, {bend_dir}, {y_force}',
+                                  f'Bend_Load_Node, 3, {z_force}',
                                   '*End Step']
             else:
                 for load_ in load:
@@ -420,13 +422,13 @@ if __name__ == "__main__":
                     
                     ram = [f'*Step, NAME = MT{mtno}{side}{abs(int(load_))}N_{int(angle)}deg',
                            '*STATIC',
-                           '*Cload',f'Load_Node, {bend_dir}, {y_force}',
-                           f'Load_Node, 3, {z_force}',
+                           '*Cload',f'Bend_Load_Node, {bend_dir}, {y_force}',
+                           f'Bend_Load_Node, 3, {z_force}',
                            '*End Step']
                     steps += ram
         
         new_data = (new_nodes + elements + surf_elements + orientation + 
-                    element_sets2 + node_sets2 + constraint + materials +
+                    element_sets2 + node_sets2 + constraint2 + materials +
                     boundary + steps)
         write_inp(new_data, b_new_file)
         

@@ -6,7 +6,7 @@ handler? But I don't even know her!
 """
 #%% Initialize
 import argparse
-import os
+import os, re
 import open3d as o3d
 import pandas as pd
 import numpy as np
@@ -37,11 +37,18 @@ def create_stl(points, filename, depth=16, view=False):
     folder = os.path.dirname(filename)
     if folder and not os.path.exists(folder):
         os.makedirs(folder)
-    
-    a = [int(b.split('_')[-1][:-4]) for b in os.listdir(folder)]
-    base_name = '_'.join(os.listdir(folder)[0][:-4].split('_')[:-1])
-    b = 1+max(a)
-    filename =f"{folder}/{base_name}_{b}"
+    base = os.path.basename(filename)
+    base_name = re.sub(r'_\d+$', '', base)
+
+    existing = [f for f in os.listdir(folder) if f.startswith(base_name + '_')]
+    nums = []
+    for f in existing:
+        match = re.match(rf'{re.escape(base_name)}_(\d+)\.stl$', f)
+        if match:
+            nums.append(int(match.group(1)))
+
+    n = 1 + max(nums) if nums else 0
+    filename = os.path.join(folder, f"{base_name}_{n}")
     
     # Step 1: Point cloud to surface mesh (Poisson reconstruction)
     pcd = o3d.geometry.PointCloud()
@@ -79,9 +86,10 @@ def create_stl(points, filename, depth=16, view=False):
     faces = np.asarray(mesh.triangles)
     
     gmsh.initialize()
-    gmsh.option.setNumber('Mesh.Optimize', 2)
-    # gmsh.option.setNumber('Mesh.MeshSizeFactor', 0.002)
-    # gmsh.option.setNumber("Mesh.ElementOrder", 2)
+    gmsh.option.setNumber("Mesh.OptimizeNetgen", 1)
+    gmsh.option.setNumber("Mesh.CharacteristicLengthMin", 0.4)
+    gmsh.option.setNumber("Mesh.Smoothing", 10)
+    gmsh.option.setNumber("Mesh.RefineSteps", 10)
     
     gmsh.model.add("TetrahedralMesh")
     
@@ -112,8 +120,6 @@ def create_stl(points, filename, depth=16, view=False):
     # Generate the mesh
     gmsh.model.mesh.generate(3)
     
-    # Export the resulting tetrahedral mesh as a VTK file
-    
     
     gmsh.write(filename + ".vtk")
     
@@ -125,85 +131,6 @@ def create_stl(points, filename, depth=16, view=False):
     
     print(f"Mesh saved as {filename}.stl and {filename}.vtk")
     return 1
-    
-def convert_to_tet10(points, tetrahedra, filtered_densities):
-    point_index_map = {tuple(p): i for i, p in enumerate(points)}
-    midpoints = {}
-    tet10_elements = []
-    tet10_densities = []
-
-    for tet in tetrahedra:
-        tet_vertices = [tuple(points[v]) for v in tet]
-        tet_density = np.mean([filtered_densities[v] for v in tet])
-        tet10 = list(tet)
-        for i in range(4):
-            for j in range(i + 1, 4):
-                edge = (tet_vertices[i], tet_vertices[j])
-                if edge not in midpoints:
-                    midpoints[edge] = (np.array(edge[0]) + np.array(edge[1])) / 2
-                    midpoint_tuple = tuple(midpoints[edge])
-                    if midpoint_tuple not in point_index_map:
-                        point_index_map[midpoint_tuple] = len(points)
-                        points = np.vstack([points, midpoints[edge]])
-                tet10.append(point_index_map[tuple(midpoints[edge])])
-        tet10_elements.append(tet10)
-        tet10_densities.append(tet_density)
-
-    return points, tet10_elements, tet10_densities
-
-def create_tet10_vtk(points, vtk_filename, depth=16, density_threshold=0.1, visualize=False):
-    # Separate points and density values
-    points = np.array(points)
-    xyz_points = points[:, :3]
-    densities = points[:, 3]
-    
-    # Use density values to filter the original point cloud
-    filtered_indices = densities >= np.quantile(densities, density_threshold)
-    filtered_points = xyz_points[filtered_indices]
-    filtered_densities = densities[filtered_indices]
-
-    # Create a point cloud from the filtered 3D points
-    pcd = o3d.geometry.PointCloud()
-    pcd.points = o3d.utility.Vector3dVector(filtered_points)
-    
-    # Estimate normals
-    pcd.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=16, max_nn=64))
-    pcd.orient_normals_consistent_tangent_plane(k=30)  # Ensure normals are consistently oriented
-    
-    # Perform Poisson surface reconstruction to get mesh and densities
-    mesh, _ = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(pcd, depth=depth)
-    mesh = mesh.remove_unreferenced_vertices()
-    mesh = mesh.remove_degenerate_triangles()
-    mesh = mesh.remove_duplicated_triangles()
-    mesh = mesh.remove_duplicated_vertices()
-    
-    
-    if visualize:
-        o3d.visualization.draw_geometries([mesh], window_name="Poisson Surface Reconstruction")
-        
-    mesh = mesh.filter_smooth_taubin(number_of_iterations=10)
-    
-    if visualize:
-        o3d.visualization.draw_geometries([mesh], window_name="Poisson Surface Reconstruction")
-        
-    # Get the vertices of the mesh
-    vertices = np.asarray(mesh.vertices)
-    
-    # Generate Delaunay triangulation of the filtered point cloud
-    delaunay = Delaunay(vertices)
-
-    # Convert the tetrahedra to Tet10 elements
-    points, tet10_elements, tet10_densities = convert_to_tet10(vertices, delaunay.simplices, filtered_densities)
-
-    # Create a Mesh object for Tet10 elements
-    tet10_mesh = meshio.Mesh(
-        points=points,
-        cells=[("tetra10", np.array(tet10_elements))],
-        cell_data={"density": [tet10_densities]}
-    )
-
-    # Write the Tet10 mesh to a VTK file
-    meshio.write(vtk_filename, tet10_mesh)
     #%%
 if __name__ == "__main__":
     
@@ -261,7 +188,7 @@ if __name__ == "__main__":
                 print(f'skipped {s}')
                 if args.stl:
                     print('still making stls')
-                stl_only = True
+                    stl_only = True
         
         for MT in MTs:
             MTname = MT.split('.')[0]

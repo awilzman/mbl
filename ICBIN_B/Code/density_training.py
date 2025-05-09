@@ -1,114 +1,209 @@
 # -*- coding: utf-8 -*-
 """
 Created on Wed Sep 18 15:46:23 2024
-
+Updated 04/13/25
 @author: Andrew
-v3.0
+v5.0
 """
 import torch
 import torch.nn as nn
-import h5py
 import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
 from torch.nn.utils.rnn import pad_sequence
+import tabulate
 import argparse
 import time
 import pandas as pd
 import density_networks as dnets
+import os
+import numpy as np
+import re
 
 class MetatarsalDataset(Dataset):
-    def __init__(self, h5_file):
-        with h5py.File(h5_file, 'r') as file:
-            self.data = []
-            self.labels = []
-            self.lengths = []
-            for key in file.keys():
-                full_data = torch.tensor(file[key][:], dtype=torch.float32)
-                features = full_data[:, :-1]
-                labels = full_data[:, -1]
-                self.data.append(features)
-                self.labels.append(labels)
-                self.lengths.append(features.size(0))
+    def __init__(self, folder, output_size, label_scaling_factor=None):
+        self.folder = folder
+        self.output_size = output_size
+        self.files = [f for f in os.listdir(folder) if f.endswith("_raw.npy")]
+        
+        if 'Runner' in folder:
+            self.runner=True
+        else:
+            self.runner=False
+            
+        self.parent_map = self._build_parent_map()
+        
+        if label_scaling_factor is None:
+            # Precompute label scaling factor using NumPy for better efficiency
+            max_vals = np.full(self.output_size, -np.inf)
+            for f in self.files[:100]:
+                data = np.load(os.path.join(folder, f), mmap_mode='r').astype("float32")
+                if data.shape[1] == self.output_size:
+                    lbl = data[1:, :]
+                else:
+                    lbl = data[1:, 31:31+output_size]
 
-        # Automatically calculate the scaling factor based on the maximum label value
-        all_labels = torch.cat(self.labels)
-        self.label_scaling_factor = all_labels.max().item()
+                max_vals = np.maximum(max_vals, np.abs(lbl).max(axis=0))
 
-        # Normalize labels (0,1)
-        self.labels = [label / self.label_scaling_factor for label in self.labels]
+            self.label_scaling_factor = torch.from_numpy(max_vals.astype("float32"))
+        else:
+            self.label_scaling_factor = label_scaling_factor.clone()
+        print(self.label_scaling_factor)
+        print('Loaded all data!')
 
     def __len__(self):
-        return len(self.data)
+        return len(self.files)
 
     def __getitem__(self, idx):
-        features, labels, _ = self.data[idx], self.labels[idx], self.lengths[idx]
+        # load & convert once
+        arr = np.load(os.path.join(self.folder, self.files[idx]), mmap_mode="r").astype("float32")
+        data = torch.from_numpy(arr)            # <-- single conversion
+        h = torch.Tensor(data[0:1, :7]) # 7 meta cols see inp_sleth.py
+        # load (N), angle (deg), age (yr), height (cm), weight (kg), sex (M=-1, F=1), runner (Y=1,N=0,C=-1) C : Cadaver
+        if data.size(1) == self.output_size:
+            lbl = data[1:, :]
+            pd = torch.from_numpy(
+                np.load(os.path.join(self.folder, self.parent_map[self.files[idx]]),
+                        mmap_mode="r").astype("float32"))
+            x = pd[1:, :30]
+            s = pd[1:, 30:31]
+        else:
+            x = data[1:, :30]
+            s = data[1:, 30:31]
+            lbl = data[1:, 31:31 + self.output_size]
 
-        # Sort based on the first three features
-        sorted_indices = torch.argsort(features[:, 2])
-        sorted_indices = sorted_indices[torch.argsort(features[sorted_indices, 1])]
-        sorted_indices = sorted_indices[torch.argsort(features[sorted_indices, 0])]
-        
-        return features[sorted_indices], labels[sorted_indices]
+        if self.label_scaling_factor is not None:
+            lbl = lbl / self.label_scaling_factor
+
+        try:
+            inp = torch.cat((x, s, lbl), dim=1) #label is diffused out during training
+        except:    
+            print(self.files[idx])
+            print(self.parent_map[self.files[idx]])
+        return inp, h, lbl
+
+    def _build_parent_map(self):
+        """ Precompute mapping from augmented file to parent file """
+        mapping = {}
     
+        def normalize(fname):
+            # Standardize study ID to MTSFX_02 format
+            return re.sub(r'^([A-Z]*)?(\d{2})(_.+)', r'\1\2\3', fname)
+    
+        for f in self.files:
+            norm_f = normalize(f)
+            base = norm_f.split("_")
+    
+            key = '_'.join(base[0:4])
+    
+            matches = []
+            for x in self.files:
+                norm_x = normalize(x)
+                if key in norm_x:
+                    matches.append(x)
+            parent = min(matches, key=len) if matches else None
+            mapping[f] = parent
+    
+        return mapping
+
 def collate_fn(batch):
-    features, labels = zip(*batch)
+    x, h, y = zip(*batch)
+    x_pad = pad_sequence(x, batch_first=True, padding_value=0)
+    y_pad = pad_sequence(y, batch_first=True, padding_value=0)
+    return x_pad, torch.stack(h), y_pad
     
-    features_padded = pad_sequence([f for f in features], batch_first=True, padding_value=0.0)
+def train(model, scheduler, 
+          dataloader, start_epoch, epochs, 
+          optimizer, criterion, noise, pint, device):
+    model.train()
+    # Track losses
+    supervised_losses = []
     
-    # Pad labels based on the maximum length in the batch
-    max_label_length = max(len(l) for l in labels)
-    labels_padded = pad_sequence(
-        [torch.cat([l, torch.full((max_label_length - len(l),), 0)]) for l in labels],
-        batch_first=True,
-        padding_value=0
-    )
+    if start_epoch >= epochs:
+        epochs += start_epoch
     
-    return features_padded, labels_padded
+    gradual = False
+        
+    # Training Loop
+    print('Training.')
+    train_losses = []
+    for epoch in range(start_epoch, epochs):
+        start = time.time()
+        if gradual:
+            progress = (epoch - start_epoch) / (epochs - start_epoch)
+            current_noise = noise * progress
+        else:
+            current_noise = noise
+            
+        for features, headers, labels in dataloader:
+            out = features.shape[2]-31
+            features, headers, labels = features.to(device), headers.to(device), labels.to(device)
+            optimizer.zero_grad()
+            
+            mask = (torch.rand(features.size(0), features.size(1), 1, 
+                               device=features.device) > current_noise).float()
+            features[:, :, -out:] *= mask
+            
+            # Encoder step
+            mod = model(features,headers)
 
-def train(encoder, densifier, dataloader, optimizer, criterion, noise, device):
-    encoder.train()
-    densifier.train()
-    total_loss = 0.0
-    for features, labels in dataloader:
-        features, labels = features.to(device), labels.to(device)
-        
-        encoded_features, _ = encoder(features)
-        
-        # Variational Autoencoder to latent -> N(0,1), efficient kl_loss
-        kl_loss = 0.5 * encoded_features.pow(2).sum(dim=-1).mean()
-        
-        encoded_features = encoded_features + torch.randn_like(encoded_features) * noise
+            # Feature-wise normalization
+            label_splits = torch.split(labels, 1, dim=2)
+            mod_splits = torch.split(mod, 1, dim=2)
 
-        # Densifier step
-        densities = densifier(features, encoded_features)
-        
-        loss = criterion(densities[labels != 0].squeeze(-1), labels[labels != 0])
-        
-        # Final loss calculation
-        loss = loss + kl_loss
+            w_mods = []
+            w_labels = []
 
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+            weights = []
 
-        total_loss += loss.item()
+            for m, lab in zip(mod_splits, label_splits):
+                m = m.squeeze(2)
+                lab = lab.squeeze(2)
+                mask = lab != 0
+                n = mask.sum().item()
+                if n > 0:
+                    w_mods.append(m[mask])
+                    w_labels.append(lab[mask])
+                    weights.append(1.0 / n)
+
+            # Normalize weights to sum to 1
+            weights = torch.tensor(weights, device=labels.device)
+            weights = weights / weights.sum()
+
+            # Concatenate
+            mod_all = torch.cat(w_mods)
+            labels_all = torch.cat(w_labels)
+            
+            supervised_loss = criterion(mod_all, labels_all)
+            
+            supervised_loss.backward()
+            optimizer.step()
         
-    total_loss /= len(dataloader)
+        train_time = time.time() - start
+        sup = float(supervised_loss)
+        supervised_losses.append(sup)
+        if epoch % pint == 0:
+            print(f'Epoch [{epoch+1:4d}/{epochs:4d}], '
+                  f'Train Time: {train_time:7.2f} s, Train Loss: {sup:8.3e}')
+        
+        scheduler.step(supervised_loss)
     
-    return total_loss, encoder, densifier
+    return supervised_losses, model
 
-
-def evaluate(encoder, densifier, dataloader, criterion, device):
+def evaluate(model, dataloader, criterion, num_out, device):
     total_loss = 0.0
     print('Testing.')
+    model.eval()
     with torch.no_grad():
-        for features, labels in dataloader:
-            features, labels = features.to(device), labels.to(device)
+        for features, headers, labels in dataloader:
+            features, headers, labels = features.to(device), headers.to(device), labels.to(device)
+            features[:, :, -num_out:] = 0 #remove labels for testing
+            mod = model(features,headers)
             
-            encoded_features, _ = encoder(features)
-            densities = densifier(features, encoded_features)
+            mask = labels != 0
+            mod = mod[mask]
+            labels = labels[mask]
             
-            loss = criterion(densities[labels != 0].squeeze(-1), labels[labels != 0])
+            loss = criterion(mod, labels)
             total_loss += loss.item()
     
     return total_loss / len(dataloader)
@@ -135,91 +230,125 @@ def plot_loss(title, train_losses, old_losses=None):
     plt.grid(True)
     plt.show()
 
-def show_bone(bone, scale):
+def show_bone(bone, scale, title='', scales_in=None):
     import pyvista as pv
-    import numpy as np
-
     points = []
     cells = []
 
-    # Generate points and cells for the TET10 elements
-    for elem in bone[0]:
-        nodes = elem[:30].reshape(10, 3)  # 10 nodes for each tetrahedron
+    for i, elem in enumerate(bone[0]):
+        nodes = elem[:30].reshape(10, 3)
         points.extend(nodes)
         start_idx = len(points) - 10
         cells.append([10] + list(range(start_idx, start_idx + 10)))
 
     points = np.array(points)
-
-    # Define cell types
     cell_type = np.full(len(cells), pv.CellType.TETRA, dtype=np.int8)
     grid = pv.UnstructuredGrid(cells, cell_type, points)
-    grid.cell_data['E11'] = bone[1] * scale
 
-    # Create a clipping plane to remove 1/4 of the bone
-    clip_plane = grid.center + np.array([0.25, 0, 0])  # Adjust the cutting location
-    clipped_grid = grid.clip(normal=(1, 0, 0), origin=clip_plane)  # Cut along the x-axis
+    values = (bone[2] * scale).T  # shape: (output_size, n_cells)
+    scalars = ['E11', 'Max Pcpl Strain', 'Min Pcpl Strain', 'TW Strain',
+               'vM Strain', 'Ele Vol', 'vM Stress']
+    scalars = [title + ' ' + i for i in scalars]
 
-    # Optionally add another plane to refine the cut (exposing 3/4)
-    second_clip_plane = grid.center + np.array([-0.25, 0, 0])
-    clipped_grid = clipped_grid.clip(normal=(-1, 0, 0), origin=second_clip_plane)
+    reported_scales = []
 
-    # Plot the clipped bone with scalars
-    plotter = pv.Plotter()
-    slices = clipped_grid.slice_orthogonal(x=0, y=0, z=0)
-    plotter.add_mesh(slices, scalars='E11', show_edges=True,
-                     cmap='viridis', interpolate_before_map=False)
+    for i, scalar_values in enumerate(values):
+        grid.cell_data.clear()
+        grid.cell_data[scalars[i]] = scalar_values
 
-    # Add an interactive view to inspect the bone
-    plotter.add_axes()
-    plotter.show()
+        # Determine scale range
+        if scales_in and i < len(scales_in) and scales_in[i] is not None:
+            vmin, vmax = scales_in[i]
+        else:
+            vmin = float(scalar_values.min())
+            vmax = float(scalar_values.max())
 
+        reported_scales.append((vmin, vmax))
+
+        plotter = pv.Plotter()
+        slices = grid.slice_orthogonal(x=0, y=0, z=0)
+        plotter.add_mesh(slices, scalars=scalars[i], show_edges=True,
+                         cmap='viridis', interpolate_before_map=False,
+                         clim=[vmin, vmax])
+        plotter.add_text(scalars[i], font_size=12)
+
+        for _ in range(2):
+            x = (np.random.rand(1) - 0.5) / 100
+            y = (np.random.rand(1) - 0.5) / 100
+            z = (np.random.rand(1) - 0.5) / 100
+            s = grid.slice_orthogonal(x=x, y=y, z=z)
+            plotter.add_mesh(s, scalars=scalars[i], cmap='viridis',
+                             interpolate_before_map=False,
+                             clim=[vmin, vmax], smooth_shading=False)
+
+        plotter.show()
+
+    return reported_scales
+
+def encode_and_save(input_folder, output_name, model, device):
     
+    # read raw element data and save embedded versions!!
+
+    for filename in os.listdir(input_folder):
+        if filename.endswith("_raw.npy"):
+            file_path = os.path.join(input_folder, filename)
+            out_file = filename.replace('_raw',f'_{output_name}')
+            output_path = os.path.join(input_folder, out_file)
+            data = np.load(file_path).astype("float32")
+            data_tensor = torch.from_numpy(data).float().to(device)
+
+            # need to apply scaling factors and noise and header            
+            embedded_data = model.encode(data_tensor.unsqueeze(0))
+            
+            embedded_data = embedded_data.detach().cpu().numpy()
+
+            np.save(output_path, embedded_data.squeeze(2))
+
+            
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--direct', type=str, default='')
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('-e', '--epochs', type=int, default=0)
-    parser.add_argument('-h1', '--hidden1', type=int, default=8)
+    parser.add_argument('-h1', '--hidden1', type=int, default=32)
+    parser.add_argument('-o', '--output_size', type=int, default=1)
     parser.add_argument('--layers', type=int, default=1)
     parser.add_argument('-b', '--bidir', action='store_true')
     parser.add_argument('-lr', type=float, default=1e-3)
+    parser.add_argument('-a', '--aug', action='store_true')
     parser.add_argument('--noise', type=float, default=0)
     parser.add_argument('--decay', type=float, default=1e-4)
-    parser.add_argument('--batch', type=int, default=32)
+    parser.add_argument('--batch', type=int, default=16)
     parser.add_argument('--pint', type=int, default=1)
     parser.add_argument('--name', type=str, default='')
     parser.add_argument('--load', type=str, default='')
-    parser.add_argument('--optim', type=str, default='Adam')
+    parser.add_argument('-ld', '--loaddis', action='store_true')
+    parser.add_argument('--optim', type=str, default='adamw')
     parser.add_argument('-v', '--visual', action='store_true')
-    
-    args = parser.parse_args(['--direct', 'A:/Work/',
-                              '--noise','0.01',
-                              '-v',
-                              '--batch','64',
-                              '-h1','32',
-                              '--layers','2',
-                              '-lr', '1e-2', '--decay', '1e-6',
-                              '-e', '30',
-                              '--pint','1',
-                              '--optim','adam',
-                              '--load', 'newnew',
-                              '--name', 'newnew'])
+    parser.add_argument('-sv', '--save', action='store_true')
+    parser.add_argument('-r', '--runner', action='store_true')
+    args = parser.parse_args(['--direct','../',
+                              '-h1','16',
+                              '-o','7',
+                              '-e','1',
+                              '--batch','128',
+                              #'-v',
+                              #'-r',
+                              '--noise','0',
+                              '--name','test',
+                              '--load',''])
 
-    if torch.cuda.is_available():
-        print('CUDA available')
-        print(torch.cuda.get_device_name(0))
-        n_gpus = torch.cuda.device_count()
-        print(f"Number of GPUs available: {n_gpus}")
-    else:
-        print('CUDA *not* available')
-        
-    # Directories
-    train_dir = args.direct + 'Data/inps/Labeled/train.h5'
-    test_dir = args.direct + 'Data/inps/Labeled/test.h5'
     
-    # Device
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    torch.cuda.empty_cache()
+    torch.cuda.init()
+    # Directories
+    if args.runner:
+        train_dir = args.direct + 'Data/Fatigue/FE_Runner/'
+    else:
+        train_dir = args.direct + 'Data/Fatigue/FE_Cadaver/'
+        
+    test_dir = args.direct + 'Data/Fatigue/FE_Cadaver/'
+    
     start_epoch = 0
     
     if args.seed == 0:
@@ -228,107 +357,131 @@ if __name__ == "__main__":
     torch.manual_seed(args.seed)
     print(f'seed: {args.seed}')
     
-    # Models
-    encoder = dnets.tet10_encoder(args.hidden1, args.layers, args.bidir).to(device)
-    densifier = dnets.tet10_densify(args.hidden1).to(device)
-    
-    # Data Loaders
-    train_dataset = MetatarsalDataset(train_dir)
-    test_dataset = MetatarsalDataset(test_dir)
-    print('Data Loaded.')
-    train_loader = DataLoader(train_dataset, batch_size=args.batch, shuffle=True, collate_fn=collate_fn)
-    test_loader = DataLoader(test_dataset, batch_size=1, shuffle=True, collate_fn=collate_fn)
+    if torch.cuda.is_available():
+        device = torch.device('cuda')
+        print('CUDA available')
+        print(torch.cuda.get_device_name(0))
+        n_gpus = torch.cuda.device_count()
+        print(f"Number of GPUs available: {n_gpus}")
+    else:
+        device = torch.device('cpu')
+        print('CUDA *not* available')
         
+    # Models
+    output_size = args.output_size
+    
+    model = dnets.tet10_autoencoder(args.hidden1, output_size).to(device)
+    #discriminator = dnets.tet10_discriminator(args.hidden1).to(device)
+    
+    no_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    #dis_params = sum(p.numel() for p in discriminator.parameters() if p.requires_grad)
+    print(f'Parameter count: {no_params}')
+    
     # Optimizer and Criterion
-    param_groups = [
-        {'params': encoder.parameters(), 'lr': args.lr * 0.1, 'weight_decay': args.decay},
-        {'params': densifier.parameters(), 'lr': args.lr, 'weight_decay': args.decay}
+    params = [
+        {'params': model.parameters(), 'lr': args.lr, 'weight_decay': args.decay}
     ]
     
     # Optimizer Dictionary
     optimizer_dict = {
-        'adam': lambda: optim.Adam(param_groups),
-        'rms': lambda: optim.RMSprop(param_groups, alpha=0.95, eps=1e-8),
-        'sgd': lambda: optim.SGD(param_groups, momentum=0.9),
-        'adamw': lambda: optim.AdamW(param_groups),
-        'adagrad': lambda: optim.Adagrad(param_groups, lr_decay=0)
+        'adam': lambda: optim.Adam(params),
+        'rms': lambda: optim.RMSprop(params, alpha=0.95, eps=1e-8),
+        'sgd': lambda: optim.SGD(params, momentum=0.9),
+        'adamw': lambda: optim.AdamW(params),
+        'adagrad': lambda: optim.Adagrad(params, lr_decay=0)
     }
+    # Instantiate the optimizers
+    optimizer = optimizer_dict[args.optim]()
     
-    # Handle optimizer selection
-    optimizer_name = args.optim.lower()
-    if optimizer_name not in optimizer_dict:
-        raise ValueError(f"Optimizer '{optimizer_name}' not recognized. Available options are: {list(optimizer_dict.keys())}")
-    
-    # Instantiate the optimizer
-    optimizer = optimizer_dict[optimizer_name]()
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer,'min')
-    # Criterion
-    criterion = nn.HuberLoss()
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=10)
+       
     train_loss_hist = []
-    new_flag = False
+    label_scaling_factor = None
+    
     if args.load != '':
         if args.load[-4:] != '.pth': # must be .pth
             args.load += '.pth'
-        checkpoint = torch.load(args.direct+'Models/'+args.load)
+        checkpoint = torch.load(args.direct+'Models/'+args.load, weights_only=False)
+        label_scaling_factor = checkpoint['scale_factor']
         try:
-            encoder.load_state_dict(checkpoint['encoder_state_dict'])
-            print(f'Successfully loaded {args.load} encoder')
+            model.load_state_dict(checkpoint['state_dict'])
+            print(f'Successfully loaded {args.load}')
         except:
-            print(f'Something went wrong loading {args.load} encoder, starting new!')
-            new_flag = True
-        
-        try:
-            densifier.load_state_dict(checkpoint['densifier_state_dict'])
-            print(f'Successfully loaded {args.load} densifier')
-        except:
-            print(f'Something went wrong loading {args.load} densifier, starting new!')
-            new_flag = True
-        
-        if not new_flag:
-            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            print(f'Something went wrong loading {args.load}, starting new!')
         
         start_epoch = checkpoint['epoch']
+        
         train_loss_hist = checkpoint.get('train_losses', [])
     
-    # Training Loop
-    print('Training.')
-    train_losses = []
-    for epoch in range(start_epoch, args.epochs):
-        start = time.time()
-        train_loss, encoder, densifier = train(
-            encoder, densifier, train_loader, optimizer, criterion,
-            args.noise, device)
-        train_time = time.time() - start 
-        train_losses.append(train_loss)
-        if epoch % args.pint == 0:
-            print(f'Epoch [{epoch+1:4d}/{args.epochs:4d}], '
-                  f'Train Time: {train_time:7.2f} s, Train Loss: {train_loss:8.3e}')
-        scheduler.step(train_loss)
+    # Data Loader
+    train_dataset = MetatarsalDataset(train_dir, output_size, label_scaling_factor)
+    if test_dir != train_dir:
+        test_dataset = MetatarsalDataset(test_dir,output_size,train_dataset.label_scaling_factor)
+    else:
+        test_dataset = train_dataset
+    
     criterion = nn.L1Loss()
-    test_loss = evaluate(encoder, densifier, test_loader, criterion, device)
-    state = {
-        'encoder_state_dict': encoder.state_dict(),
-        'densifier_state_dict': densifier.state_dict(),
-        'optimizer_state_dict': optimizer.state_dict(),
-        'epoch': epoch,
-        'train_losses': train_loss_hist+train_losses,
-        'testing_loss': test_loss,
-        'scale_factor': train_dataset.label_scaling_factor
-    }
-    path = f'{args.direct}Metrics/{args.name}_{args.hidden1}x{args.layers}.csv'
-    metrics = pd.DataFrame(state['train_losses'])
-    metrics.to_csv(path)
-    print(f'Saved {args.name}. Test MAE: {test_loss:.3e}')
     
-    path = args.direct+'Models/'+args.name+'.pth' 
-    
-    
-    torch.save(state, path)
     if args.visual:
         import matplotlib.pyplot as plt
-        #print('Showing example input data...')
-        #show_bone(test_dataset[0],train_dataset.label_scaling_factor)
-        if args.load != '':
-            plot_loss(args.name,train_losses,train_loss_hist)
-        else:
-            plot_loss(args.name,train_losses)
+        print('Showing example input data...')
+        X = train_dataset[1]
+        scales = show_bone(X,train_dataset.label_scaling_factor,'Real')
+        
+        X[0][:, -output_size:] = 0
+        model.eval()
+        with torch.no_grad():
+            output = model(X[0].unsqueeze(0).to(device),X[1].unsqueeze(0).to(device))
+        X[2][:] = output.squeeze(0)
+        
+        _ = show_bone(X,train_dataset.label_scaling_factor,'Reconstructed',scales)
+        
+    print(f"Train dataset size: {len(train_dataset)}")
+    train_loader = DataLoader(train_dataset, batch_size=args.batch,
+                              shuffle=True, collate_fn=collate_fn)
+    
+    train_loss, model = train(model, scheduler, train_loader, start_epoch, args.epochs, 
+        optimizer, criterion, args.noise, args.pint, device)
+    
+    # Evaluation
+    train_scale = train_dataset.label_scaling_factor
+    
+    state = {
+        'state_dict': model.state_dict(),
+        'epoch': args.epochs,
+        'train_losses': train_loss_hist + train_loss,
+        'scale_factor': train_dataset.label_scaling_factor
+    }
+    path = args.direct+'Models/'+args.name+'.pth' 
+    torch.save(state, path)
+    
+    
+    test_loader = DataLoader(test_dataset, batch_size=args.batch, shuffle=False, collate_fn=collate_fn)
+    criterion = nn.L1Loss()
+
+    test_loss = evaluate(model, test_loader, criterion, output_size, device)
+    
+    path = f'{args.direct}Metrics/{args.name}_{args.hidden1}.csv'
+    metrics = pd.DataFrame(state['train_losses'])
+    metrics.to_csv(path)
+    
+    if args.save:
+        import os
+        import numpy as np
+        
+        path2 = args.direct+'Data/Fatigue/Models/'+args.name+'_enc.pth' 
+        torch.save(state, path2)
+        
+        encode_and_save('Z:/_PROJECTS/Deep_Learning_HRpQCT/ICBIN_B/Data/Fatigue',
+                        args.name,model,device)
+        
+        encode_and_save('Z:/_PROJECTS/Deep_Learning_HRpQCT/ICBIN_B/Data/Fatigue/Test_Data',
+                        args.name,model,device)
+        
+        encode_and_save('Z:/_PROJECTS/Deep_Learning_HRpQCT/ICBIN_B/Data/Fatigue/Runner',
+                        args.name,model,device)
+    
+    
+    print(f'Saved {args.name}. Test MAE: {test_loss:.3e}')
+    
+    

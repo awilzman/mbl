@@ -184,7 +184,8 @@ class FoldingLayer(nn.Module):
 class arw_FoldingNet(nn.Module):
     def __init__(self, h1, h3):
         super(arw_FoldingNet, self).__init__()
-        self.activate = nn.ReLU()
+        
+        self.activate = nn.LeakyReLU()
         self.h1 = h1
         self.h3 = h3
         self.k = 16
@@ -200,23 +201,32 @@ class arw_FoldingNet(nn.Module):
         self.graph_encoder1 = GraphLayer(h3, h3 * 2)
         self.graph_encoder2 = GraphLayer(h3 * 2, h1)
         
+        self.graph_encoder3 = GraphLayer(h3, h3 * 2)
+        self.graph_encoder4 = GraphLayer(h3 * 2, h1)
+        
         self.conv4 = nn.Conv1d(h1, h1, 1)
         self.bn4 = nn.BatchNorm1d(h1)
         
-        xx = np.linspace(-40, 40, 50, dtype=np.float32)
-        yy = np.linspace(-60, 60, 50, dtype=np.float32)
-        self.grid = np.array(np.meshgrid(xx, yy)) 
-
-        # reshape
-        self.grid = torch.Tensor(self.grid).view(2, -1)
+        self.conv5 = nn.Conv1d(h1, h1, 1)
+        self.bn5 = nn.BatchNorm1d(h1)
         
-        self.m = self.grid.shape[1]
+        self.scale_mlp = nn.Sequential(
+            nn.Linear(h1, 64),
+            nn.ReLU(),
+            nn.Linear(64, 3),  # scale for x, y, z
+            nn.Sigmoid()
+        )
+
 
         self.fold1 = FoldingLayer(h1 + 2, [h1, h1, 3])
         self.fold2 = FoldingLayer(h1 + 3, [h1, h1, 3])
+        
+        self.to_mu = nn.Linear(h1, h1)
+        self.to_logvar = nn.Linear(h1, h1)
     
     def encode(self, data):
         b,n,c=data.size()
+        
         knn_idx = knn(data, k=self.k)
         knn_x = index_points(data, knn_idx)  # (B, N, 16, 3)
         mean = torch.mean(knn_x, dim=2, keepdim=True)
@@ -232,31 +242,64 @@ class arw_FoldingNet(nn.Module):
         x=x.permute(0,2,1)
 
         # two consecutive graph layers
-        x = self.graph_encoder1(x)
-        x = self.graph_encoder2(x)
-        x=x.permute(0,2,1)
-        x = self.bn4(self.conv4(x))
+        x1 = self.graph_encoder1(x)
+        x1 = self.graph_encoder2(x1)
+        x1=x1.permute(0,2,1)
+        x1 = self.bn4(self.conv4(x1))
         
-        x = torch.max(x, dim=-1)[0]
-        return x
+        x1 = torch.max(x1, dim=-1)[0]
+        
+        x2 = self.graph_encoder3(x)
+        x2 = self.graph_encoder4(x2)
+        x2=x2.permute(0,2,1)
+        x2 = self.bn5(self.conv5(x2))
+        
+        x2 = torch.max(x2, dim=-1)[0]
+        
+        x1 = x1.unsqueeze(1)
+        x2 = x2.unsqueeze(1)
+        
+        h = torch.cat((x1,x2),dim=1)
+        
+        mu = self.to_mu(h)
+        logvar = self.to_logvar(h)
+        
+        return mu, logvar
 
     def decode(self, x, num_nodes):
-        b,c = x.shape
+        b, n, c = x.shape  # (B, 2, D
         
-        # repeat grid for batch operation
-        grid = self.grid.to(x.device)
-        grid = grid.unsqueeze(0).repeat(b, 1, 1) 
-        n = grid.shape[-1]
-        # repeat codewords
-        x = x.unsqueeze(2).repeat(1, 1, self.m)
+        # Generate a common grid
+        base_x = torch.linspace(-40, 40, 50, device=x.device)  # normalized range
+        base_y = torch.linspace(-60, 60, 50, device=x.device)
+        X, Y = torch.meshgrid(base_x, base_y, indexing='ij')
+        grid = torch.stack((X, Y), dim=0).view(2, -1)  # shape: (2, N)
         
-        # two folding operations
-        recon1 = self.fold1(grid, x)
-        recon2 = self.fold2(recon1, x)
-        rand_ind = torch.randperm(n)[:num_nodes]
-        recon2 = recon2.permute(0,2,1)[:,rand_ind,:]
+        # Scale grid per batch
+        grid = grid.unsqueeze(0).repeat(b, 1, 1)  # (B, 2, N)
         
-        return recon2
+        # Expand latent codes
+        g_n = grid.shape[-1]
+        x1 = x[:, 0, :].unsqueeze(2).repeat(1, 1, g_n)
+        x2 = x[:, 1, :].unsqueeze(2).repeat(1, 1, g_n)
+        
+        # Folding
+        r1 = self.fold1(grid, x1)
+        r2 = self.fold2(r1, x2)
+        
+        # Random sampling
+        idx = torch.randperm(g_n)[:num_nodes]
+        r2 = r2.permute(0, 2, 1)[:, idx, :]  # (B, N, D)
+
+        s = self.scale_mlp(x[:, 1, :]).unsqueeze(1)
+        
+        return r2*s
+        
+    def forward(self,x):
+        b,n,c=x.size()
+        y = self.encode(x)
+        return self.decode(y,n)
+        
 
 class arw_TRSNet(nn.Module):
     def __init__(self, h1,h3):

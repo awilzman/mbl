@@ -9,6 +9,25 @@ import density_training as dtrn
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+def read_inp(input_file, header='*HEADING', stop_line='bleepbloop', keep=False):
+    # Default values result in whole file read, not including heading
+    # and only if *HEADING is there in the beginning
+    with open(input_file, 'r') as inp_file:
+        in_data = False
+        data = []
+        for line in inp_file:
+            line = line.strip()
+            if line.startswith(header):
+                in_data = True
+                if keep:
+                    data.append(line)
+            elif in_data:
+                if line.startswith(stop_line):
+                    in_data = False
+                else:
+                    data.append(line)
+    return data
+
 def plot_weights(model, layer_name):
     """Plot the weights of a specific layer or parameter in the model."""
     # Handle if layer_name is for a specific parameter (e.g., LSTM weights)
@@ -76,22 +95,22 @@ if __name__ == "__main__":
     parser.add_argument('-l','--load', type=str, default='')
     parser.add_argument('-f','--file', type=str, default='')
     parser.add_argument('--hidden1', type=int, required=True)
-    parser.add_argument('--layers', type=int, required=True)
+    parser.add_argument('--layers', type=int)
     parser.add_argument('-b','--bidir', action='store_true')
     parser.add_argument('--savevtk', action='store_true')
     parser.add_argument('-v','--visualize', action='store_true')
-    parser.add_argument('-n','--noise', type=float, default=1e-3)
-    parser.add_argument('--matnum', type=int, default=100)
+    parser.add_argument('-n','--noise', type=float, default=0)
+    parser.add_argument('--mean_mod', type=int, default=4e3)
+    parser.add_argument('--matnum', type=int, default=100, help='number of materials')
     parser.add_argument('--axial_loads', default=[100,200,300])
     parser.add_argument('--bend_loads', default=[100,200,300])
     parser.add_argument('--bend_angle', type=int, default=30)
     
-    args = parser.parse_args(['-d', 'A:/Work/','-v',
+    args = parser.parse_args(['-d', '../','-v',
                               #'-b',
-                              '-l','dimp',
+                              '-l','woah',
                               '-f','diff_med_fold_512_128_128',
-                              '--hidden1','64',
-                              '--layers', '4'
+                              '--hidden1','128',
                               ])
     
     if torch.cuda.is_available():
@@ -105,20 +124,21 @@ if __name__ == "__main__":
     if args.load != '':
         if args.load[-4:] != '.pth':
             args.load += '.pth'
+    #load a real inp
     
     #load fabricated inps
     fab_data = os.path.join(args.direct, 'Data/Generated/tet10',args.file)
     inp_files = [f for f in os.listdir(fab_data) if f.endswith('.inp')]
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    encoder = dnets.tet10_encoder(args.hidden1, args.layers, args.bidir).to(device)
-    densifier = dnets.tet10_densify(args.hidden1).to(device)
+    model = dnets.tet10_autoencoder(args.hidden1,16).to(device)
     
     # Load only model weights
     checkpoint = torch.load(os.path.join(args.direct, 'Models', args.load), weights_only=True)
 
-    encoder.load_state_dict(checkpoint['encoder_state_dict'])
-    densifier.load_state_dict(checkpoint['densifier_state_dict'])
+    model.load_state_dict(checkpoint['state_dict'])
+    model.eval()
+    
     scale_factor= checkpoint['scale_factor']
     
     #densify all inp_files
@@ -128,8 +148,8 @@ if __name__ == "__main__":
         
         inp_part = ['*Part, name=PART-1']
         inp_nodes = ['*NODE']
-        inp_elements = inpsl.read_inp(inp_path,'*ELEMENT','*',True)
-        inp_surf_elements = inpsl.read_inp(inp_path,'*SURFACE','*',True)
+        inp_elements = read_inp(inp_path,'*ELEMENT','*',True)
+        inp_surf_elements = read_inp(inp_path,'*SURFACE','*',True)
         inp_orient = ['*Orientation, name = Ori-1','1., 0., 0., 0., 1., 0.','1, 0.']
         inp_matsets = []
         for i in range(args.matnum):
@@ -138,7 +158,7 @@ if __name__ == "__main__":
         inp_act_ele = ['*ELSET, ELSET=Active_Elements']
         inp_endpart = ['*End Part','*Assembly, name=Assembly','*Instance, name=PART-1-1, part=PART-1',
                        '*End Instance']
-        inp_surf_nodes = inpsl.read_inp(inp_path,'*NSET, NSET=NS_Surface','*',True)
+        inp_surf_nodes = read_inp(inp_path,'*NSET, NSET=NS_Surface','*',True)
         inp_load_node = ['*NSET, NSET=Load_Node, instance=PART-1-1']
         inp_bend_node = ['*NSET, NSET=Bend_Load_Node, instance=PART-1-1']
         inp_fixed_nodes = ['*NSET, NSET=Fixed_Nodes, instance=PART-1-1']
@@ -167,25 +187,29 @@ if __name__ == "__main__":
         nodes = np.array(list(node_data.values()))*1e-3# mm -> m
         node_ids = np.array(list(node_data.keys())).reshape(-1, 1)
         node_data = np.hstack((node_ids, nodes))
+        
         for node in node_data:
             inp_nodes.append(f'\t{int(node[0])}, {node[1]:.9e}, {node[2]:.9e}, {node[3]:.9e}')
+            
         element_data[:,:-2] = element_data[:,:-2]*1e-3# mm -> m 
         
         #guess densities, inp_parser has 0s in place of density if not read
-        X = torch.FloatTensor(element_data[:,:-1]) 
+        X = torch.FloatTensor(element_data)
         sorted_indices = torch.argsort(X[:, 2])
         sorted_indices = sorted_indices[torch.argsort(X[sorted_indices, 1])]
         sorted_indices = sorted_indices[torch.argsort(X[sorted_indices, 0])]
         X = X[sorted_indices].unsqueeze(0).to(device)
+    
+        E_out = model(X)
         
-        with torch.no_grad():
-            encoded, l = encoder(X)
-            encoded = encoded + torch.randn_like(encoded) * args.noise
-            E_out = densifier(X, encoded)
-            
-        X = X.detach().cpu().numpy().squeeze(0)
         E_out = E_out.detach().cpu().numpy().squeeze(0)
         
+        plt.figure(figsize=(10,5))
+        plt.hist(E_out.flatten())
+        plt.show()
+        
+        X = X[0,:,:]
+        X = X.detach().cpu().numpy()
         if args.visualize:
             dtrn.show_bone([X,E_out],scale_factor)
             
@@ -298,8 +322,9 @@ if __name__ == "__main__":
                     node[axis]) < max_z - 0.015 and (
                         float(node[axis]) > min_z + 0.03)]
                         
-        active_elements = [int(ele.split(',')[0]) for ele in inp_elements[1:] if all(
+        active_elements = [int(ele.split(',')[0]) for ele in inp_elements[1:] if ele and all(
             node in active_nodes for node in [int(i) for i in ele.split(',')[1:]])]
+        
         zerod_anodes = np.array(active_nodes) - 1
         # If more surface points exist on positive axis bend_dir is positive
         y_check = [float(nd[bend_dir]) for nd in node_data[zerod_anodes]]
@@ -437,5 +462,22 @@ if __name__ == "__main__":
                      inp_orient+inp_newmatsets+inp_act_ele+inp_endpart+
                      inp_load_node+inp_bend_node+inp_fixed_nodes+inp_active_nodes+
                      inp_coupling+inp_endass+inp_materials+inp_bc+inp_steps)
-        new_inp_file = f'{args.direct}Data/inps/Fabricated/{args.file}/{inp_file[:-4]}.inp'
+        f_direct = f'{args.direct}Data/inps/Fabricated/{args.file}/'
+        new_inp_file = f'{f_direct}{inp_file}'
         write_inp(final_inp,new_inp_file)
+        
+    folder_path = os.path.dirname(os.path.abspath(new_inp_file))
+    batch_script = f"""@echo off
+    SET INPUT_DIR="{folder_path}"
+    
+    for %%f in (%INPUT_DIR%\\*_tet10.inp) do (
+        for %%a in ("%%f") do (
+            echo Running Abaqus for file: %%~na
+            abaqus job=%%~na input="%%f"
+            timeout /t 45 >nul
+        )
+    )
+    """
+    
+    with open(f_direct + "run_abq_jobs.bat", "w") as file:
+        file.write(batch_script)
