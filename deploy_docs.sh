@@ -11,7 +11,7 @@ git worktree add /tmp/gh-pages gh-pages
 rm -rf /tmp/gh-pages/*
 
 # Copy new docs
-cp -r build/* /tmp/gh-pages/
+cp -r build/html/* /tmp/gh-pages/
 
 # Commit and push
 cd /tmp/gh-pages
