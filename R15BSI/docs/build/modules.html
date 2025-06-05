@@ -1,0 +1,567 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Module Reference &mdash; Project name not set  documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=5929fcd5"></script>
+      <script src="_static/doctools.js?v=9bcbadda"></script>
+      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="prev" title="Welcome to Fatigue Analysis’s documentation" href="index.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            Project name not set
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Module Reference</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#module-instron_read">instron_read module</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#instron_read.TestProcessor"><code class="docutils literal notranslate"><span class="pre">TestProcessor</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#instron_read.TestProcessor.analyze_cycle"><code class="docutils literal notranslate"><span class="pre">TestProcessor.analyze_cycle()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#instron_read.TestProcessor.calculate_stiffness"><code class="docutils literal notranslate"><span class="pre">TestProcessor.calculate_stiffness()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#instron_read.TestProcessor.get_predicted_displacement"><code class="docutils literal notranslate"><span class="pre">TestProcessor.get_predicted_displacement()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#instron_read.TestProcessor.handle_results"><code class="docutils literal notranslate"><span class="pre">TestProcessor.handle_results()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#instron_read.TestProcessor.identify_metatarsal"><code class="docutils literal notranslate"><span class="pre">TestProcessor.identify_metatarsal()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#instron_read.TestProcessor.load_test_data"><code class="docutils literal notranslate"><span class="pre">TestProcessor.load_test_data()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#instron_read.TestProcessor.plot_results"><code class="docutils literal notranslate"><span class="pre">TestProcessor.plot_results()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#instron_read.TestProcessor.process_all_tests"><code class="docutils literal notranslate"><span class="pre">TestProcessor.process_all_tests()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#instron_read.TestProcessor.process_cycles"><code class="docutils literal notranslate"><span class="pre">TestProcessor.process_cycles()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#instron_read.TestProcessor.process_tests"><code class="docutils literal notranslate"><span class="pre">TestProcessor.process_tests()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#instron_read.TestProcessor.reset_cycle_state"><code class="docutils literal notranslate"><span class="pre">TestProcessor.reset_cycle_state()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#instron_read.TestProcessor.save_results"><code class="docutils literal notranslate"><span class="pre">TestProcessor.save_results()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#module-run_fatigue_stats">run_fatigue_stats module</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#run_fatigue_stats.StatsDoer"><code class="docutils literal notranslate"><span class="pre">StatsDoer</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#run_fatigue_stats.StatsDoer.corr_plots"><code class="docutils literal notranslate"><span class="pre">StatsDoer.corr_plots()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#run_fatigue_stats.StatsDoer.define_loadcases"><code class="docutils literal notranslate"><span class="pre">StatsDoer.define_loadcases()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#run_fatigue_stats.StatsDoer.define_sn_curves"><code class="docutils literal notranslate"><span class="pre">StatsDoer.define_sn_curves()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#run_fatigue_stats.StatsDoer.grab_fe_data"><code class="docutils literal notranslate"><span class="pre">StatsDoer.grab_fe_data()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#run_fatigue_stats.StatsDoer.load_computer"><code class="docutils literal notranslate"><span class="pre">StatsDoer.load_computer()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#run_fatigue_stats.StatsDoer.load_the_cases"><code class="docutils literal notranslate"><span class="pre">StatsDoer.load_the_cases()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#run_fatigue_stats.StatsDoer.multi_model"><code class="docutils literal notranslate"><span class="pre">StatsDoer.multi_model()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#run_fatigue_stats.StatsDoer.tune_parameters"><code class="docutils literal notranslate"><span class="pre">StatsDoer.tune_parameters()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#run_fatigue_stats.get_subjects"><code class="docutils literal notranslate"><span class="pre">get_subjects()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#run_fatigue_stats.main"><code class="docutils literal notranslate"><span class="pre">main()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#run_fatigue_stats.parse_args"><code class="docutils literal notranslate"><span class="pre">parse_args()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#run_fatigue_stats.process_repro"><code class="docutils literal notranslate"><span class="pre">process_repro()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">Project name not set</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Module Reference</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/modules.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="module-reference">
+<h1>Module Reference<a class="headerlink" href="#module-reference" title="Link to this heading"></a></h1>
+<section id="module-instron_read">
+<span id="instron-read-module"></span><h2>instron_read module<a class="headerlink" href="#module-instron_read" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="instron_read.TestProcessor">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">instron_read.</span></span><span class="sig-name descname"><span class="pre">TestProcessor</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">directory</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">load_case</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">save</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">plot</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">figsize</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">(18,</span> <span class="pre">14)</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fontsize</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">60</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#instron_read.TestProcessor" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>directory</strong> (<em>str</em>)</p></li>
+<li><p><strong>load_case</strong> (<em>DataFrame</em>)</p></li>
+<li><p><strong>save</strong> (<em>bool</em>)</p></li>
+<li><p><strong>plot</strong> (<em>bool</em>)</p></li>
+<li><p><strong>figsize</strong> (<em>tuple</em><em>[</em><em>int</em><em>, </em><em>int</em><em>]</em>)</p></li>
+<li><p><strong>fontsize</strong> (<em>int</em>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="instron_read.TestProcessor.analyze_cycle">
+<span class="sig-name descname"><span class="pre">analyze_cycle</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">cycle_data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pred_disp</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cycle_num</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#instron_read.TestProcessor.analyze_cycle" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-data docutils literal notranslate"><span class="pre">Optional</span></code>[<code class="xref py py-class docutils literal notranslate"><span class="pre">dict</span></code>]</span></p>
+</dd>
+<dt class="field-even">Parameters<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><strong>cycle_data</strong> (<em>DataFrame</em>)</p></li>
+<li><p><strong>pred_disp</strong> (<em>float</em>)</p></li>
+<li><p><strong>cycle_num</strong> (<em>int</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="instron_read.TestProcessor.calculate_stiffness">
+<span class="sig-name descname"><span class="pre">calculate_stiffness</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">inflx_idx</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_load</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">min_load</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">inflx_pos</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cycle_num</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#instron_read.TestProcessor.calculate_stiffness" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">tuple</span></code>[<code class="xref py py-class docutils literal notranslate"><span class="pre">float</span></code>, <code class="xref py py-class docutils literal notranslate"><span class="pre">float</span></code>, <code class="xref py py-class docutils literal notranslate"><span class="pre">float</span></code>, <code class="xref py py-class docutils literal notranslate"><span class="pre">float</span></code>]</span></p>
+</dd>
+<dt class="field-even">Parameters<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><strong>data</strong> (<em>DataFrame</em>)</p></li>
+<li><p><strong>inflx_idx</strong> (<em>int</em>)</p></li>
+<li><p><strong>max_load</strong> (<em>float</em>)</p></li>
+<li><p><strong>min_load</strong> (<em>float</em>)</p></li>
+<li><p><strong>inflx_pos</strong> (<em>float</em>)</p></li>
+<li><p><strong>cycle_num</strong> (<em>int</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="instron_read.TestProcessor.get_predicted_displacement">
+<span class="sig-name descname"><span class="pre">get_predicted_displacement</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">sub_name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">side</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mtno</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#instron_read.TestProcessor.get_predicted_displacement" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-data docutils literal notranslate"><span class="pre">Optional</span></code>[<code class="xref py py-class docutils literal notranslate"><span class="pre">Series</span></code>]</span></p>
+</dd>
+<dt class="field-even">Parameters<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><strong>sub_name</strong> (<em>str</em>)</p></li>
+<li><p><strong>side</strong> (<em>str</em>)</p></li>
+<li><p><strong>mtno</strong> (<em>int</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="instron_read.TestProcessor.handle_results">
+<span class="sig-name descname"><span class="pre">handle_results</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">results</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sub_name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">side</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mtno</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sheet_name</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#instron_read.TestProcessor.handle_results" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-data docutils literal notranslate"><span class="pre">Optional</span></code>[<code class="xref py py-class docutils literal notranslate"><span class="pre">float</span></code>]</span></p>
+</dd>
+<dt class="field-even">Parameters<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><strong>results</strong> (<em>DataFrame</em>)</p></li>
+<li><p><strong>sub_name</strong> (<em>str</em>)</p></li>
+<li><p><strong>side</strong> (<em>str</em>)</p></li>
+<li><p><strong>mtno</strong> (<em>int</em>)</p></li>
+<li><p><strong>sheet_name</strong> (<em>str</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="instron_read.TestProcessor.identify_metatarsal">
+<span class="sig-name descname"><span class="pre">identify_metatarsal</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">item</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#instron_read.TestProcessor.identify_metatarsal" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">int</span></code></span></p>
+</dd>
+<dt class="field-even">Parameters<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>item</strong> (<em>str</em>)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="instron_read.TestProcessor.load_test_data">
+<span class="sig-name descname"><span class="pre">load_test_data</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">file_path</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#instron_read.TestProcessor.load_test_data" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">DataFrame</span></code></span></p>
+</dd>
+<dt class="field-even">Parameters<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>file_path</strong> (<em>str</em>)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="instron_read.TestProcessor.plot_results">
+<span class="sig-name descname"><span class="pre">plot_results</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">results</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sheet</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">subj</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">side</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#instron_read.TestProcessor.plot_results" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-obj docutils literal notranslate"><span class="pre">None</span></code></span></p>
+</dd>
+<dt class="field-even">Parameters<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><strong>results</strong> (<em>DataFrame</em>)</p></li>
+<li><p><strong>sheet</strong> (<em>str</em>)</p></li>
+<li><p><strong>subj</strong> (<em>str</em>)</p></li>
+<li><p><strong>side</strong> (<em>str</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="instron_read.TestProcessor.process_all_tests">
+<span class="sig-name descname"><span class="pre">process_all_tests</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">sub_directory</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sub_name</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#instron_read.TestProcessor.process_all_tests" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">float</span></code></span></p>
+</dd>
+<dt class="field-even">Parameters<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><strong>sub_directory</strong> (<em>str</em>)</p></li>
+<li><p><strong>sub_name</strong> (<em>str</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="instron_read.TestProcessor.process_cycles">
+<span class="sig-name descname"><span class="pre">process_cycles</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mtna</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pred_disp</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#instron_read.TestProcessor.process_cycles" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-data docutils literal notranslate"><span class="pre">Optional</span></code>[<code class="xref py py-class docutils literal notranslate"><span class="pre">DataFrame</span></code>]</span></p>
+</dd>
+<dt class="field-even">Parameters<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><strong>data</strong> (<em>DataFrame</em>)</p></li>
+<li><p><strong>mtna</strong> (<em>str</em>)</p></li>
+<li><p><strong>pred_disp</strong> (<em>float</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="instron_read.TestProcessor.process_tests">
+<span class="sig-name descname"><span class="pre">process_tests</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">path</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">side</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sub_name</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#instron_read.TestProcessor.process_tests" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-obj docutils literal notranslate"><span class="pre">None</span></code></span></p>
+</dd>
+<dt class="field-even">Parameters<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><strong>path</strong> (<em>str</em>)</p></li>
+<li><p><strong>side</strong> (<em>str</em>)</p></li>
+<li><p><strong>sub_name</strong> (<em>str</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="instron_read.TestProcessor.reset_cycle_state">
+<span class="sig-name descname"><span class="pre">reset_cycle_state</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#instron_read.TestProcessor.reset_cycle_state" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-obj docutils literal notranslate"><span class="pre">None</span></code></span></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="instron_read.TestProcessor.save_results">
+<span class="sig-name descname"><span class="pre">save_results</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">results</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">subj</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">side</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mt</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sheet</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#instron_read.TestProcessor.save_results" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">DataFrame</span></code></span></p>
+</dd>
+<dt class="field-even">Parameters<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><strong>results</strong> (<em>DataFrame</em>)</p></li>
+<li><p><strong>subj</strong> (<em>str</em>)</p></li>
+<li><p><strong>side</strong> (<em>str</em>)</p></li>
+<li><p><strong>mt</strong> (<em>int</em>)</p></li>
+<li><p><strong>sheet</strong> (<em>str</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="module-run_fatigue_stats">
+<span id="run-fatigue-stats-module"></span><h2>run_fatigue_stats module<a class="headerlink" href="#module-run_fatigue_stats" title="Link to this heading"></a></h2>
+<p>Created on Fri May 31 08:45:44 2024</p>
+<p>&#64;author: arwilzman</p>
+<dl class="py class">
+<dt class="sig sig-object py" id="run_fatigue_stats.StatsDoer">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">run_fatigue_stats.</span></span><span class="sig-name descname"><span class="pre">StatsDoer</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">directory</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bone_map</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">items</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">save</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">plot</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#run_fatigue_stats.StatsDoer" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>directory</strong> (<em>str</em>)</p></li>
+<li><p><strong>bone_map</strong> (<em>Dict</em><em>[</em><em>str</em><em>, </em><em>int</em><em>]</em>)</p></li>
+<li><p><strong>items</strong> (<em>List</em><em>[</em><em>str</em><em>] </em><em>| </em><em>None</em>)</p></li>
+<li><p><strong>save</strong> (<em>bool</em>)</p></li>
+<li><p><strong>plot</strong> (<em>bool</em>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="run_fatigue_stats.StatsDoer.corr_plots">
+<span class="sig-name descname"><span class="pre">corr_plots</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">mags</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#run_fatigue_stats.StatsDoer.corr_plots" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-obj docutils literal notranslate"><span class="pre">None</span></code></span></p>
+</dd>
+<dt class="field-even">Parameters<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>mags</strong> (<em>List</em><em>[</em><em>str</em><em>] </em><em>| </em><em>None</em>)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="run_fatigue_stats.StatsDoer.define_loadcases">
+<span class="sig-name descname"><span class="pre">define_loadcases</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">load_case</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mtnos</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">(2,</span> <span class="pre">3,</span> <span class="pre">4)</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sides</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">('L',</span> <span class="pre">'R')</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#run_fatigue_stats.StatsDoer.define_loadcases" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-obj docutils literal notranslate"><span class="pre">None</span></code></span></p>
+</dd>
+<dt class="field-even">Parameters<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><strong>load_case</strong> (<em>DataFrame</em>)</p></li>
+<li><p><strong>mtnos</strong> (<em>Tuple</em><em>[</em><em>int</em><em>, </em><em>int</em><em>, </em><em>int</em><em>]</em>)</p></li>
+<li><p><strong>sides</strong> (<em>Tuple</em><em>[</em><em>str</em><em>, </em><em>str</em><em>]</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="run_fatigue_stats.StatsDoer.define_sn_curves">
+<span class="sig-name descname"><span class="pre">define_sn_curves</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">mtnos</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">(2,</span> <span class="pre">3,</span> <span class="pre">4)</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cycles</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">['Fatigue</span> <span class="pre">Life',</span> <span class="pre">'Initial</span> <span class="pre">Stiffness',</span> <span class="pre">'Maximum</span> <span class="pre">Stiffness',</span> <span class="pre">'Max</span> <span class="pre">Hardening</span> <span class="pre">Ratio']</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mags</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">['von</span> <span class="pre">Mises</span> <span class="pre">Stressed</span> <span class="pre">Volume',</span> <span class="pre">'von</span> <span class="pre">Mises</span> <span class="pre">Strained</span> <span class="pre">Volume',</span> <span class="pre">'Tsai-Wu</span> <span class="pre">Strained</span> <span class="pre">Volume',</span> <span class="pre">'Max</span> <span class="pre">Principal</span> <span class="pre">Strain',</span> <span class="pre">'Min</span> <span class="pre">Principal</span> <span class="pre">Strain',</span> <span class="pre">'Predicted</span> <span class="pre">Stiffness']</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#run_fatigue_stats.StatsDoer.define_sn_curves" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">DataFrame</span></code></span></p>
+</dd>
+<dt class="field-even">Parameters<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><strong>mtnos</strong> (<em>Tuple</em><em>[</em><em>int</em><em>, </em><em>int</em><em>, </em><em>int</em><em>]</em>)</p></li>
+<li><p><strong>cycles</strong> (<em>List</em><em>[</em><em>str</em><em>]</em>)</p></li>
+<li><p><strong>mags</strong> (<em>List</em><em>[</em><em>str</em><em>]</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="run_fatigue_stats.StatsDoer.grab_fe_data">
+<span class="sig-name descname"><span class="pre">grab_fe_data</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">sides</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">('L',</span> <span class="pre">'R')</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#run_fatigue_stats.StatsDoer.grab_fe_data" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">DataFrame</span></code></span></p>
+</dd>
+<dt class="field-even">Parameters<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>sides</strong> (<em>Tuple</em><em>[</em><em>str</em><em>, </em><em>str</em><em>]</em>)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="run_fatigue_stats.StatsDoer.load_computer">
+<span class="sig-name descname"><span class="pre">load_computer</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">ram</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">target</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#run_fatigue_stats.StatsDoer.load_computer" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">int</span></code></span></p>
+</dd>
+<dt class="field-even">Parameters<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><strong>ram</strong> (<em>int</em>)</p></li>
+<li><p><strong>target</strong> (<em>str</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="run_fatigue_stats.StatsDoer.load_the_cases">
+<span class="sig-name descname"><span class="pre">load_the_cases</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">mtnos</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">(2,</span> <span class="pre">3,</span> <span class="pre">4)</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sides</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">('L',</span> <span class="pre">'R')</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#run_fatigue_stats.StatsDoer.load_the_cases" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-obj docutils literal notranslate"><span class="pre">None</span></code></span></p>
+</dd>
+<dt class="field-even">Parameters<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><strong>mtnos</strong> (<em>Tuple</em><em>[</em><em>int</em><em>, </em><em>int</em><em>, </em><em>int</em><em>]</em>)</p></li>
+<li><p><strong>sides</strong> (<em>Tuple</em><em>[</em><em>str</em><em>, </em><em>str</em><em>]</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="run_fatigue_stats.StatsDoer.multi_model">
+<span class="sig-name descname"><span class="pre">multi_model</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#run_fatigue_stats.StatsDoer.multi_model" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-data docutils literal notranslate"><span class="pre">Tuple</span></code>[<code class="xref py py-class docutils literal notranslate"><span class="pre">DataFrame</span></code>, <code class="xref py py-class docutils literal notranslate"><span class="pre">DataFrame</span></code>]</span></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="run_fatigue_stats.StatsDoer.tune_parameters">
+<span class="sig-name descname"><span class="pre">tune_parameters</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fatigue_lives</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tw_str_vols</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">vm_str_o_vols</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">vm_str_e_vols</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tw_exp</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">vm_exp</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lhs_data</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#run_fatigue_stats.StatsDoer.tune_parameters" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-obj docutils literal notranslate"><span class="pre">None</span></code></span></p>
+</dd>
+<dt class="field-even">Parameters<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><strong>fatigue_lives</strong> (<em>ndarray</em>)</p></li>
+<li><p><strong>tw_str_vols</strong> (<em>List</em><em>[</em><em>ndarray</em><em>]</em>)</p></li>
+<li><p><strong>vm_str_o_vols</strong> (<em>List</em><em>[</em><em>ndarray</em><em>]</em>)</p></li>
+<li><p><strong>vm_str_e_vols</strong> (<em>List</em><em>[</em><em>ndarray</em><em>]</em>)</p></li>
+<li><p><strong>tw_exp</strong> (<em>float</em>)</p></li>
+<li><p><strong>vm_exp</strong> (<em>float</em>)</p></li>
+<li><p><strong>lhs_data</strong> (<em>DataFrame</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="run_fatigue_stats.get_subjects">
+<span class="sig-prename descclassname"><span class="pre">run_fatigue_stats.</span></span><span class="sig-name descname"><span class="pre">get_subjects</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">subs</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">base_dir</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#run_fatigue_stats.get_subjects" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">List</span></code>[<code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code>]</span></p>
+</dd>
+<dt class="field-even">Parameters<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><strong>subs</strong> (<em>str</em>)</p></li>
+<li><p><strong>base_dir</strong> (<em>str</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="run_fatigue_stats.main">
+<span class="sig-prename descclassname"><span class="pre">run_fatigue_stats.</span></span><span class="sig-name descname"><span class="pre">main</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">argv</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#run_fatigue_stats.main" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-obj docutils literal notranslate"><span class="pre">None</span></code></span></p>
+</dd>
+<dt class="field-even">Parameters<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>argv</strong> (<em>List</em><em>[</em><em>str</em><em>] </em><em>| </em><em>None</em>)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="run_fatigue_stats.parse_args">
+<span class="sig-prename descclassname"><span class="pre">run_fatigue_stats.</span></span><span class="sig-name descname"><span class="pre">parse_args</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">argv</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#run_fatigue_stats.parse_args" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">Namespace</span></code></span></p>
+</dd>
+<dt class="field-even">Parameters<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>argv</strong> (<em>List</em><em>[</em><em>str</em><em>] </em><em>| </em><em>None</em>)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="run_fatigue_stats.process_repro">
+<span class="sig-prename descclassname"><span class="pre">run_fatigue_stats.</span></span><span class="sig-name descname"><span class="pre">process_repro</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">directory</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">df</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">subs</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#run_fatigue_stats.process_repro" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-obj docutils literal notranslate"><span class="pre">None</span></code></span></p>
+</dd>
+<dt class="field-even">Parameters<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><strong>directory</strong> (<em>str</em>)</p></li>
+<li><p><strong>df</strong> (<em>DataFrame</em>)</p></li>
+<li><p><strong>args</strong> (<em>Namespace</em>)</p></li>
+<li><p><strong>subs</strong> (<em>List</em><em>[</em><em>str</em><em>]</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="index.html" class="btn btn-neutral float-left" title="Welcome to Fatigue Analysis’s documentation" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright .</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
