@@ -13,7 +13,7 @@ cd ../..
 # Prepare worktree
 git worktree add /tmp/gh-pages gh-pages
 rm -rf /tmp/gh-pages/*
-cp -r R15BSI/docs/build/html/* /tmp/gh-pages/
+cp -a R15BSI/docs/build/html/. /tmp/gh-pages/
 
 # Commit and push
 cd /tmp/gh-pages
