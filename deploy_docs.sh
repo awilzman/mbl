@@ -7,12 +7,17 @@ cd R15BSI/docs
 # Build docs
 py -m sphinx -b html source build
 
+# Ensure .nojekyll exists to prevent GitHub from ignoring _* files
+touch build/html/.nojekyll
+
 # Back to repo root
 cd ../..
 
 # Prepare worktree
 git worktree add /tmp/gh-pages gh-pages
 rm -rf /tmp/gh-pages/*
+
+# Copy complete contents of built docs
 cp -a R15BSI/docs/build/html/. /tmp/gh-pages/
 
 # Commit and push
