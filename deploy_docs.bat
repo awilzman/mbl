@@ -1,5 +1,4 @@
 @echo off
-REM Abort on errors
 setlocal enabledelayedexpansion
 
 REM Navigate to docs directory
@@ -15,26 +14,30 @@ type nul > build\html\.nojekyll
 REM Back to repo root
 cd ..\..
 
-REM Prepare worktree
+REM Remove existing worktree if present
+git worktree remove C:\TEMP\gh-pages 2>nul
+
+REM Remove folder if it still exists (leftover from previous runs)
+if exist C:\TEMP\gh-pages (
+    rmdir /s /q C:\TEMP\gh-pages
+)
+
+REM Add worktree cleanly
 git worktree add C:\TEMP\gh-pages gh-pages
 if errorlevel 1 exit /b
 
-REM Remove old files in worktree
-rmdir /s /q C:\temp\gh-pages
-mkdir C:\temp\gh-pages
-
 REM Copy built docs to worktree
-xcopy /e /i /y R15BSI\docs\build\html\* C:\temp\gh-pages\
+xcopy /e /i /y R15BSI\docs\build\html\* C:\TEMP\gh-pages\
 
 REM Commit and push changes
-cd C:\temp\gh-pages
+cd C:\TEMP\gh-pages
 git add --all
 git commit -m "Update docs %DATE% %TIME%" || echo No changes to commit
 git push origin gh-pages
 if errorlevel 1 exit /b
 
-REM Cleanup
+REM Cleanup: remove worktree link (do not delete folder, git removes it)
 cd ..
-git worktree remove C:\temp\gh-pages
+git worktree remove C:\TEMP\gh-pages
 
 endlocal
