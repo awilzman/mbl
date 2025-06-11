@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 from scipy.signal import butter, filtfilt
 from scipy.stats import linregress
 import scipy.integrate as integrate
+from scipy.interpolate import interp1d
 from typing import List, Dict, Optional, Tuple
 
 class TestProcessor:
@@ -149,7 +150,7 @@ class TestProcessor:
         
         cycle_data = cycle_data.reset_index(drop=True)
         a = len(cycle_data)
-        if a <= 20:
+        if a <= 10:
             return None
         
         max_load = cycle_data['Force'].min()
@@ -230,7 +231,6 @@ class TestProcessor:
                             min_load: float,
                             inflx_pos: float,
                             cycle_num: int) -> tuple[float, float, float, float]:
-        
         def is_valid_for_regression(subset: pd.DataFrame) -> bool:
             return subset['Pos'].nunique() > 1 and subset['Force'].nunique() > 1
         
@@ -249,31 +249,66 @@ class TestProcessor:
             slope_unload = linregress(unload_data['Pos'], unload_data['Force'] * 1000)[0]
         else:
             return 0, 0, 0, 0  # Exit if invalid for regression
-        
-        #I want to take the first section of load data if necessary
-        if len(load_data) > len(unload_data):
-            Y_L = load_data.iloc[:len(unload_data)]['Force']
-            X_L = load_data.iloc[:len(unload_data)]['Pos']
-            Y_U = unload_data['Force']
-            X_U = unload_data['Pos']
-        #I want to take the last section of unload if necessary
-        elif len(unload_data) > len(load_data):
-            Y_U = unload_data.iloc[len(load_data):]['Force']
-            X_U = unload_data.iloc[len(load_data):]['Pos']
-            Y_L = load_data['Force']
-            X_L = load_data['Pos']
-        else:
-            Y_L = load_data['Force']
-            X_L = load_data['Pos']
-            Y_U = unload_data['Force']
-            X_U = unload_data['Pos']
-        
+
+        Y_L = load_data['Force']
+        X_L = load_data['Pos']
+        Y_U = unload_data['Force']
+        X_U = unload_data['Pos']
+
         # Calculate dissipation energies
         # hysteresis energy / total energy
-        load_diss = abs(integrate.trapezoid(y=Y_L, x=X_L))
-        unload_diss = abs(integrate.trapezoid(y=Y_U, x=X_U))
-        dissipation = (load_diss - unload_diss) / load_diss
+        # Clean and enforce monotonicity
+        # Remove non-finite values
+        valid_L = np.isfinite(X_L) & np.isfinite(Y_L)
+        valid_U = np.isfinite(X_U) & np.isfinite(Y_U)
+
+        X_L, Y_L = X_L[valid_L], Y_L[valid_L]
+        X_U, Y_U = X_U[valid_U], Y_U[valid_U]
+        no_diss = False
         
+        # Ensure enough points
+        if len(X_L) < 2 or len(X_U) < 2:
+            no_diss = True
+            print('not enough points for energy')
+
+        # Ensure unique and aligned
+        X_L_unique, idx_L = np.unique(X_L, return_index=True)
+        Y_L = Y_L.iloc[idx_L] if isinstance(Y_L, pd.Series) else Y_L[idx_L]
+
+        X_U_unique, idx_U = np.unique(X_U, return_index=True)
+        Y_U = Y_U.iloc[idx_U] if isinstance(Y_U, pd.Series) else Y_U[idx_U]
+
+        X_L = X_L_unique
+        X_U = X_U_unique
+        # Shared domain
+        x_min, x_max = max(X_L.min(), X_U.min()), min(X_L.max(), X_U.max())
+        if x_min >= x_max:
+            no_diss = True
+            print('theres no overlap in loading curves')
+
+        common_x = np.linspace(x_min, x_max, num=500)
+
+        # Interpolation
+        interp_L = interp1d(X_L, Y_L, kind='linear', bounds_error=False, fill_value='extrapolate')
+        interp_U = interp1d(X_U, Y_U, kind='linear', bounds_error=False, fill_value='extrapolate')
+
+        Y_L_r = interp_L(common_x)
+        Y_U_r = interp_U(common_x)
+
+        # Integration
+        load_diss = abs(integrate.trapezoid(Y_L_r, common_x))
+        unload_diss = abs(integrate.trapezoid(Y_U_r, common_x))
+
+        # Final check
+        if load_diss == 0 or np.isnan(load_diss) or np.isnan(unload_diss):
+            print('something terrible happened')
+            no_diss = True
+
+        if no_diss:
+            dissipation = 0
+        else:
+            dissipation = (load_diss - unload_diss) / load_diss
+            
         # some stiffnesses start out extrememly low, < 10, this must be the 
         # very beginning of the test or an incorrect measurement.
         if not self.initialized and slope_load > 30:

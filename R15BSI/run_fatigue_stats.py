@@ -910,9 +910,9 @@ def main(argv: Optional[List[str]] = None) -> None:
 #%%
 if __name__ == "__main__":
     main([
-        #'-s',
+        '-s',
         '-p',
         #'--redef', #takes a medium time, resets to Cadaver_Tracking.xlsx
         '--repro', # takes a long time, recreates parquets in Fatigue study
-        #'--stats'
+        '--stats'
         ])
