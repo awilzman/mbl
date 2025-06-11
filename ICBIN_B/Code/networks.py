@@ -217,7 +217,6 @@ class arw_FoldingNet(nn.Module):
             nn.Sigmoid()
         )
 
-
         self.fold1 = FoldingLayer(h1 + 2, [h1, h1, 3])
         self.fold2 = FoldingLayer(h1 + 3, [h1, h1, 3])
         

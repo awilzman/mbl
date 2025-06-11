@@ -4,12 +4,15 @@ Created on Wed Sep 18 15:46:23 2024
 Updated 04/13/25
 @author: Andrew
 v5.0
+
+
 """
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
 from torch.nn.utils.rnn import pad_sequence
+from sklearn.decomposition import PCA
 import tabulate
 import argparse
 import time
@@ -25,7 +28,7 @@ class MetatarsalDataset(Dataset):
         self.output_size = output_size
         self.files = [f for f in os.listdir(folder) if f.endswith("_raw.npy")]
         
-        if 'Runner' in folder:
+        if 'Runner' in folder:	
             self.runner=True
         else:
             self.runner=False
@@ -35,7 +38,7 @@ class MetatarsalDataset(Dataset):
         if label_scaling_factor is None:
             # Precompute label scaling factor using NumPy for better efficiency
             max_vals = np.full(self.output_size, -np.inf)
-            for f in self.files[:100]:
+            for f in self.files[:200]:
                 data = np.load(os.path.join(folder, f), mmap_mode='r').astype("float32")
                 if data.shape[1] == self.output_size:
                     lbl = data[1:, :]
@@ -47,7 +50,6 @@ class MetatarsalDataset(Dataset):
             self.label_scaling_factor = torch.from_numpy(max_vals.astype("float32"))
         else:
             self.label_scaling_factor = label_scaling_factor.clone()
-        print(self.label_scaling_factor)
         print('Loaded all data!')
 
     def __len__(self):
@@ -111,84 +113,129 @@ def collate_fn(batch):
     y_pad = pad_sequence(y, batch_first=True, padding_value=0)
     return x_pad, torch.stack(h), y_pad
     
-def train(model, scheduler, 
-          dataloader, start_epoch, epochs, 
-          optimizer, criterion, noise, pint, device):
+def train(model, scheduler, dataloader, start_epoch, epochs, optimizer, criterion, noise, pint, device):
     model.train()
-    # Track losses
     supervised_losses = []
     
     if start_epoch >= epochs:
         epochs += start_epoch
     
     gradual = False
-        
-    # Training Loop
+    
     print('Training.')
-    train_losses = []
+    
     for epoch in range(start_epoch, epochs):
         start = time.time()
-        if gradual:
-            progress = (epoch - start_epoch) / (epochs - start_epoch)
-            current_noise = noise * progress
-        else:
-            current_noise = noise
-            
+        progress = (epoch - start_epoch) / (epochs - start_epoch) if gradual else 1.0
+        current_noise = noise * progress
+        param_snapshots = []
+
         for features, headers, labels in dataloader:
-            out = features.shape[2]-31
+            out = features.shape[2] - 31
             features, headers, labels = features.to(device), headers.to(device), labels.to(device)
             optimizer.zero_grad()
-            
-            mask = (torch.rand(features.size(0), features.size(1), 1, 
-                               device=features.device) > current_noise).float()
+
+            mask = (torch.rand(features.size(0), features.size(1), 1, device=device) > current_noise).float()
             features[:, :, -out:] *= mask
-            
-            # Encoder step
-            mod = model(features,headers)
 
-            # Feature-wise normalization
-            label_splits = torch.split(labels, 1, dim=2)
-            mod_splits = torch.split(mod, 1, dim=2)
+            mod = model(features, headers)
 
-            w_mods = []
-            w_labels = []
+            # Flatten time and batch dims
+            mod = mod.reshape(-1, mod.size(2))    # (B*T, D)
+            labels = labels.reshape(-1, labels.size(2))  # (B*T, D)
+            # I would like to print the MSE loss for each feature in D between mod and labels
+            valid = labels != 0
 
-            weights = []
-
-            for m, lab in zip(mod_splits, label_splits):
-                m = m.squeeze(2)
-                lab = lab.squeeze(2)
-                mask = lab != 0
-                n = mask.sum().item()
-                if n > 0:
-                    w_mods.append(m[mask])
-                    w_labels.append(lab[mask])
-                    weights.append(1.0 / n)
-
-            # Normalize weights to sum to 1
-            weights = torch.tensor(weights, device=labels.device)
-            weights = weights / weights.sum()
-
-            # Concatenate
-            mod_all = torch.cat(w_mods)
-            labels_all = torch.cat(w_labels)
-            
-            supervised_loss = criterion(mod_all, labels_all)
-            
+            supervised_loss = criterion(mod[valid],labels[valid])
             supervised_loss.backward()
             optimizer.step()
-        
+            sup = float(supervised_loss)
+            
+            with torch.no_grad():
+                vec = torch.cat([p.detach().flatten() for p in model.parameters()])
+                param_snapshots.append(vec)
+            #plot_loss_landscape(model, dataloader, param_snapshots, criterion, device)
+
         train_time = time.time() - start
-        sup = float(supervised_loss)
+        
         supervised_losses.append(sup)
+
         if epoch % pint == 0:
             print(f'Epoch [{epoch+1:4d}/{epochs:4d}], '
                   f'Train Time: {train_time:7.2f} s, Train Loss: {sup:8.3e}')
-        
+
         scheduler.step(supervised_loss)
-    
+        
+
     return supervised_losses, model
 
+def plot_loss_landscape(model, dataloader, param_snapshots, criterion, device, res=15, scale=1.0, pca_stride=1):
+    import matplotlib.pyplot as plt
+    from mpl_toolkits.mplot3d import Axes3D 
+    if len(param_snapshots) < 30:
+        return
+
+    W = torch.stack(param_snapshots[::pca_stride]).cpu().numpy()
+    pca = PCA(n_components=2)
+    pca.fit(W)
+    PCs = pca.components_
+    ref = param_snapshots[-1].cpu().numpy()
+
+    x = np.linspace(-scale, scale, res)
+    y = np.linspace(-scale, scale, res)
+    Z = np.zeros((res, res))
+
+    # Save current model state
+    orig = [p.detach().clone() for p in model.parameters()]
+
+    # Use a small batch
+    batch = next(iter(dataloader))
+    features, headers, labels = [t.to(device) for t in batch]
+    features, headers, labels = features[:1], headers[:1], labels[:1]
+
+    for i, a in enumerate(x):
+        for j, b in enumerate(y):
+            delta = a * PCs[0] + b * PCs[1]
+            w_new = ref + delta
+            idx = 0
+            with torch.no_grad():
+                for p in model.parameters():
+                    n = p.numel()
+                    p.copy_(torch.from_numpy(w_new[idx:idx+n]).view_as(p).to(device))
+                    idx += n
+
+                out = model(features, headers).reshape(-1, labels.size(2))
+                lbl = labels.reshape(-1, labels.size(2))
+                valid = lbl != 0
+                loss = criterion(out[valid], lbl[valid])
+                Z[j, i] = float(loss)
+
+    # Restore original weights
+    with torch.no_grad():
+        for p, o in zip(model.parameters(), orig):
+            p.copy_(o)
+
+    # Plot
+    X, Y = np.meshgrid(x, y)
+    fig = plt.figure(figsize=(6, 5))
+    ax = fig.add_subplot(111, projection='3d')
+
+    ax.plot_surface(X, Y, Z, cmap='viridis', edgecolor='none')
+
+    # Set larger font sizes
+    ax.set_xlabel('PC1', fontsize=14)
+    ax.set_ylabel('PC2', fontsize=14)
+    ax.set_zlabel('Loss', fontsize=14)
+    ax.set_title('Loss Surface (Top-2 PCs)', fontsize=16)
+
+    # Increase tick label sizes
+    ax.tick_params(axis='both', which='major', labelsize=12)
+    ax.tick_params(axis='z', which='major', labelsize=12)
+
+    plt.tight_layout()
+    plt.show()
+
+    
 def evaluate(model, dataloader, criterion, num_out, device):
     total_loss = 0.0
     print('Testing.')
@@ -317,7 +364,7 @@ if __name__ == "__main__":
     parser.add_argument('-lr', type=float, default=1e-3)
     parser.add_argument('-a', '--aug', action='store_true')
     parser.add_argument('--noise', type=float, default=0)
-    parser.add_argument('--decay', type=float, default=1e-4)
+    parser.add_argument('--decay', type=float, default=1e-5)
     parser.add_argument('--batch', type=int, default=16)
     parser.add_argument('--pint', type=int, default=1)
     parser.add_argument('--name', type=str, default='')
@@ -328,13 +375,15 @@ if __name__ == "__main__":
     parser.add_argument('-sv', '--save', action='store_true')
     parser.add_argument('-r', '--runner', action='store_true')
     args = parser.parse_args(['--direct','../',
-                              '-h1','16',
+                              '-h1','64',
                               '-o','7',
                               '-e','1',
-                              '--batch','128',
+                              '-lr','1e-3',
+                              '--decay','1e-5',
+                              '--batch','16',
                               #'-v',
                               #'-r',
-                              '--noise','0',
+                              '--noise','1',
                               '--name','test',
                               '--load',''])
 
@@ -420,7 +469,7 @@ if __name__ == "__main__":
     else:
         test_dataset = train_dataset
     
-    criterion = nn.L1Loss()
+    criterion = nn.MSELoss()
     
     if args.visual:
         import matplotlib.pyplot as plt
@@ -433,7 +482,7 @@ if __name__ == "__main__":
         with torch.no_grad():
             output = model(X[0].unsqueeze(0).to(device),X[1].unsqueeze(0).to(device))
         X[2][:] = output.squeeze(0)
-        
+        _ = show_bone(X,train_dataset.label_scaling_factor,'Reconstructed')
         _ = show_bone(X,train_dataset.label_scaling_factor,'Reconstructed',scales)
         
     print(f"Train dataset size: {len(train_dataset)}")
@@ -454,7 +503,6 @@ if __name__ == "__main__":
     }
     path = args.direct+'Models/'+args.name+'.pth' 
     torch.save(state, path)
-    
     
     test_loader = DataLoader(test_dataset, batch_size=args.batch, shuffle=False, collate_fn=collate_fn)
     criterion = nn.L1Loss()
